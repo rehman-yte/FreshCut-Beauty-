@@ -71,11 +71,27 @@ const App: React.FC = () => {
       email: email,
       role: email.includes('admin') ? 'admin' : 'customer'
     });
+    // Algorithmic check: if admin email used, redirect to admin-panel, else dashboard
     setCurrentView(email.includes('admin') ? 'admin-panel' : 'dashboard');
   };
 
   const handleBookingComplete = (data: any) => {
-    setCurrentView('payment-mockup');
+    // Conditional Logic: Ensure user is logged in before proceeding to payment session
+    if (!profile) {
+      setCurrentView('login');
+    } else {
+      setCurrentView('payment-mockup');
+    }
+  };
+
+  const handleViewChange = (view: string) => {
+    // Protected View Algorithm: Redirect guest users to login for dashboard/admin/payment
+    const protectedViews = ['dashboard', 'admin-panel', 'payment-mockup'];
+    if (protectedViews.includes(view) && !profile) {
+      setCurrentView('login');
+    } else {
+      setCurrentView(view as AppView);
+    }
   };
 
   return (
@@ -85,7 +101,7 @@ const App: React.FC = () => {
         onLogout={() => { setProfile(null); setCurrentView('home'); }} 
         onAuthOpen={() => setCurrentView('login')}
         currentView={currentView === 'dashboard' || currentView === 'admin-panel' ? 'dashboard' : 'home'}
-        onViewChange={(view) => setCurrentView(view as AppView)}
+        onViewChange={handleViewChange}
       />
 
       {currentView === 'login' && (
@@ -117,7 +133,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {currentView === 'admin-panel' && (
+      {currentView === 'admin-panel' && profile && (
         <AdminPanel 
           bookings={[]} 
           professionals={MOCK_PROFESSIONALS} 
@@ -143,7 +159,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {currentView === 'payment-mockup' && (
+      {currentView === 'payment-mockup' && profile && (
         <div className="min-h-screen pt-32 pb-20 px-4 flex justify-center">
           <div className="max-w-2xl w-full animate-fadeIn">
             <h2 className="text-4xl font-serif font-black gold-gradient mb-12 text-center uppercase">Secure Checkout</h2>
@@ -178,7 +194,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <button onClick={() => setCurrentView('dashboard')} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase transform hover:scale-[1.02] transition-all">Confirm & Pay</button>
+              <button onClick={() => handleViewChange('dashboard')} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase transform hover:scale-[1.02] transition-all">Confirm & Pay</button>
             </div>
             <p className="text-center mt-8 text-[10px] text-white/20 uppercase tracking-[0.3em]">Encrypted and Secure &bull; Razorpay &bull; SSL</p>
           </div>
@@ -225,6 +241,7 @@ const App: React.FC = () => {
                           <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
                         </div>
                         <div className="flex justify-between items-center">
+                          {/* Price Hiding Logic: Uses 'invisible' to hide while maintaining layout flow */}
                           <span className={`text-2xl font-serif font-black gold-gradient pointer-events-none transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>₹{s.price}</span>
                           <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
                         </div>
@@ -242,6 +259,7 @@ const App: React.FC = () => {
                           <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
                         </div>
                         <div className="flex justify-between items-center">
+                          {/* Price Hiding Logic: Uses 'invisible' to hide while maintaining layout flow */}
                           <span className={`text-2xl font-serif font-black gold-gradient pointer-events-none transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>₹{s.price}</span>
                           <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
                         </div>
@@ -302,10 +320,10 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 text-center">
           <span className="text-4xl font-serif font-black gold-gradient mb-12 block">FRESH CUT</span>
           <div className="flex flex-wrap justify-center gap-10 mb-12 text-[11px] font-black tracking-widest uppercase text-white/40">
-            <button onClick={() => setCurrentView('home')} className="hover:text-gold transition-all">Home</button>
-            <button onClick={() => { setCurrentView('home'); setTimeout(() => document.getElementById('services')?.scrollIntoView({behavior:'smooth'}), 100); }} className="hover:text-gold transition-all">Services</button>
-            <button onClick={() => setCurrentView('dashboard')} className="hover:text-gold transition-all">Dashboard</button>
-            <button onClick={() => setCurrentView('partner')} className="hover:text-gold transition-all">Partner With Us</button>
+            <button onClick={() => handleViewChange('home')} className="hover:text-gold transition-all">Home</button>
+            <button onClick={() => { handleViewChange('home'); setTimeout(() => document.getElementById('services')?.scrollIntoView({behavior:'smooth'}), 100); }} className="hover:text-gold transition-all">Services</button>
+            <button onClick={() => handleViewChange('dashboard')} className="hover:text-gold transition-all">Dashboard</button>
+            <button onClick={() => handleViewChange('partner')} className="hover:text-gold transition-all">Partner With Us</button>
           </div>
           <div className="flex flex-wrap justify-center gap-6 mb-12 text-[9px] font-black tracking-widest uppercase text-white/20">
             <button className="hover:text-gold transition-all">Terms of Service</button>
