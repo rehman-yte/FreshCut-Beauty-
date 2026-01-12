@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import { UserRole, Profile, Professional, Service, Booking, Category } from './types';
+import { UserRole, Profile, Professional, Service, Booking, Category, PartnerRequest } from './types';
 import { Navbar } from './components/Navbar';
 import { AdminPanel } from './components/AdminPanel';
 import { Dashboard } from './components/Dashboard';
@@ -23,12 +23,6 @@ AUTHENTICATION & FUNCTIONALITY ROADMAP
 8. Admin Dashboard: Holistic control for partner approval and service availability.
 */
 
-const MOCK_PROFESSIONALS: Professional[] = [
-  { id: '1', name: 'Master Lorenzo', category: 'gents', bio: 'Senior Master Barber with 15 years experience in precision gents grooming.', image_url: 'https://images.unsplash.com/photo-1605497746444-ac961d1349a2?auto=format&fit=crop&q=80', specialties: ['Precision Cut', 'Beard'] },
-  { id: '2', name: 'Isabella Thorne', category: 'ladies', bio: 'Premier Stylist specializing in ladies couture styling and luxury bridal transformations.', image_url: 'https://images.unsplash.com/photo-1595152772835-219674b2a8a6?auto=format&fit=crop&q=80', specialties: ['Styling', 'Color'] },
-  { id: '3', name: 'Sophie Vane', category: 'ladies', bio: 'Aesthetics expert focused on high-end skin treatments and professional makeup.', image_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80', specialties: ['Facial', 'Makeup'] },
-];
-
 const MOCK_SERVICES: Service[] = [
   { id: '1', name: 'Executive Gents Cut', category: 'gents', price: 999, duration_mins: 45 },
   { id: '2', name: 'Ladies Couture Styling', category: 'ladies', price: 1499, duration_mins: 60 },
@@ -36,13 +30,11 @@ const MOCK_SERVICES: Service[] = [
   { id: '4', name: 'Luxe Glow Facial', category: 'ladies', price: 2499, duration_mins: 90 },
 ];
 
-// RESTORED ORIGINAL HERO IMAGES (TOP SECTION LOCKED)
 const HERO_IMAGES = [
   "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80",
   "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&q=80"
 ];
 
-// Architectural View Roadmap
 type AppView = 'home' | 'dashboard' | 'booking-flow' | 'partner' | 'login' | 'signup' | 'admin-panel' | 'payment-mockup';
 
 const App: React.FC = () => {
@@ -50,20 +42,19 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('home');
   const [heroImageIndex, setHeroImageIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [approvedPartners, setApprovedPartners] = useState<Professional[]>([]);
 
-  // Form States (UI Roadmap)
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
 
   useEffect(() => {
-    // Initial loading guard to prevent hydration mismatch/auth crash
     const initTimer = setTimeout(() => setIsLoading(false), 300);
-
-    // Reinstated 5 second interval for original feel
     const interval = setInterval(() => {
       setHeroImageIndex((prev) => (prev + 1) % HERO_IMAGES.length);
     }, 5000);
+    
+    fetchApprovedPartners();
     
     return () => {
       clearTimeout(initTimer);
@@ -71,10 +62,29 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const fetchApprovedPartners = async () => {
+    const { data, error } = await supabase
+      .from('partners')
+      .select('*')
+      .eq('status', 'approved');
+
+    if (!error && data) {
+      const mappedPartners: Professional[] = data.map((p: any) => ({
+        id: p.id,
+        name: p.shop_name,
+        bio: p.services,
+        image_url: p.category === 'gents' 
+          ? 'https://images.unsplash.com/photo-1605497746444-ac961d1349a2?auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1595152772835-219674b2a8a6?auto=format&fit=crop&q=80',
+        specialties: p.services.split(','),
+        category: p.category
+      }));
+      setApprovedPartners(mappedPartners);
+    }
+  };
+
   const handleAuth = (e: React.FormEvent, type: 'login' | 'signup') => {
     e.preventDefault();
-    
-    // STRICT ADMIN LOGIN CHECK
     const isAdmin = email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@';
     
     setProfile({
@@ -84,12 +94,10 @@ const App: React.FC = () => {
       role: isAdmin ? 'admin' : 'customer'
     });
     
-    // Algorithmic check: if admin credentials used, redirect to admin-panel, else dashboard
     setCurrentView(isAdmin ? 'admin-panel' : 'dashboard');
   };
 
   const handleBookingComplete = (data: any) => {
-    // Conditional Logic: Ensure user is logged in before proceeding to payment session
     if (!profile) {
       setCurrentView('login');
     } else {
@@ -98,12 +106,14 @@ const App: React.FC = () => {
   };
 
   const handleViewChange = (view: string) => {
-    // Protected View Algorithm: Redirect guest users to login for dashboard/admin/payment
     const protectedViews = ['dashboard', 'admin-panel', 'payment-mockup'];
     if (protectedViews.includes(view) && !profile) {
       setCurrentView('login');
     } else {
       setCurrentView(view as AppView);
+      if (view === 'home') {
+        fetchApprovedPartners();
+      }
     }
   };
 
@@ -157,7 +167,7 @@ const App: React.FC = () => {
       {currentView === 'admin-panel' && profile && (
         <AdminPanel 
           bookings={[]} 
-          professionals={MOCK_PROFESSIONALS} 
+          professionals={approvedPartners.length > 0 ? approvedPartners : []} 
           onUpdateStatus={() => {}} 
         />
       )}
@@ -167,13 +177,13 @@ const App: React.FC = () => {
       )}
 
       {currentView === 'partner' && (
-        <PartnerPage onSubmit={() => {}} />
+        <PartnerPage onSubmit={() => setCurrentView('home')} />
       )}
 
       {currentView === 'booking-flow' && (
         <BookingPage 
           type="gents" 
-          professionals={MOCK_PROFESSIONALS} 
+          professionals={approvedPartners} 
           services={MOCK_SERVICES} 
           onSubmit={handleBookingComplete}
           onBack={() => setCurrentView('home')}
@@ -200,31 +210,14 @@ const App: React.FC = () => {
                   <span className="gold-gradient">₹1,048</span>
                 </div>
               </div>
-              
-              <div className="space-y-4 mb-10">
-                <h3 className="text-sm font-black tracking-widest uppercase text-white/40 mb-4">Payment Options</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-6 border border-white/10 rounded-2xl flex flex-col items-center hover:border-gold cursor-pointer transition-all">
-                    <span className="text-xs font-bold mb-2">UPI (Razorpay)</span>
-                    <div className="h-1 w-8 bg-gold/50 rounded-full" />
-                  </div>
-                  <div className="p-6 border border-white/10 rounded-2xl flex flex-col items-center hover:border-gold cursor-pointer transition-all">
-                    <span className="text-xs font-bold mb-2">Cards</span>
-                    <div className="h-1 w-8 bg-gold/50 rounded-full" />
-                  </div>
-                </div>
-              </div>
-
               <button onClick={() => handleViewChange('dashboard')} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase transform hover:scale-[1.02] transition-all">Confirm & Pay</button>
             </div>
-            <p className="text-center mt-8 text-[10px] text-white/20 uppercase tracking-[0.3em]">Encrypted and Secure &bull; Razorpay &bull; SSL</p>
           </div>
         </div>
       )}
 
       {currentView === 'home' && (
         <main className="animate-fadeIn">
-          {/* RESTORED TOP SECTION (LOCKED) */}
           <section className="relative h-screen flex items-center justify-center overflow-hidden">
             <div className="absolute inset-0 z-0">
               {HERO_IMAGES.map((img, idx) => (
@@ -262,7 +255,6 @@ const App: React.FC = () => {
                           <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
                         </div>
                         <div className="flex justify-between items-center">
-                          {/* Price Hiding Logic: Uses 'invisible' to hide while maintaining layout flow */}
                           <span className={`text-2xl font-serif font-black gold-gradient pointer-events-none transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>₹{s.price}</span>
                           <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
                         </div>
@@ -280,7 +272,6 @@ const App: React.FC = () => {
                           <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
                         </div>
                         <div className="flex justify-between items-center">
-                          {/* Price Hiding Logic: Uses 'invisible' to hide while maintaining layout flow */}
                           <span className={`text-2xl font-serif font-black gold-gradient pointer-events-none transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>₹{s.price}</span>
                           <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
                         </div>
@@ -292,7 +283,6 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* TOP BARBER & BEAUTICIAN SHOWCASE (BOTTOM SECTION ONLY) */}
           <section className="pb-32 bg-dark-800">
             <div className="max-w-7xl mx-auto px-4">
               <div className="text-center mb-16">
@@ -301,36 +291,35 @@ const App: React.FC = () => {
                 <div className="h-px w-12 bg-gold/30 mx-auto mt-4" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
-                  <img 
-                    src="https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&q=80&w=400" 
-                    alt="Master Barber" 
-                    className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" 
-                  />
-                  <div className="mt-6 text-center">
-                    <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Master Barbering</p>
-                  </div>
-                </div>
-                <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
-                  <img 
-                    src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=400" 
-                    alt="Ladies Stylist" 
-                    className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" 
-                  />
-                  <div className="mt-6 text-center">
-                    <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Couture Styling</p>
-                  </div>
-                </div>
-                <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
-                  <img 
-                    src="https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&q=80&w=400" 
-                    alt="Artisan Tools" 
-                    className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" 
-                  />
-                  <div className="mt-6 text-center">
-                    <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Elite Instruments</p>
-                  </div>
-                </div>
+                {approvedPartners.length > 0 ? (
+                  approvedPartners.slice(0, 3).map(p => (
+                    <div key={p.id} className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
+                      <img 
+                        src={p.image_url} 
+                        alt={p.name} 
+                        className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" 
+                      />
+                      <div className="mt-6 text-center">
+                        <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">{p.name}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
+                      <img src="https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&q=80&w=400" alt="Master Barber" className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" />
+                      <div className="mt-6 text-center"><p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Master Barbering</p></div>
+                    </div>
+                    <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
+                      <img src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=400" alt="Ladies Stylist" className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" />
+                      <div className="mt-6 text-center"><p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Couture Styling</p></div>
+                    </div>
+                    <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
+                      <img src="https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&q=80&w=400" alt="Artisan Tools" className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" />
+                      <div className="mt-6 text-center"><p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Elite Instruments</p></div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </section>
@@ -345,10 +334,6 @@ const App: React.FC = () => {
             <button onClick={() => { handleViewChange('home'); setTimeout(() => document.getElementById('services')?.scrollIntoView({behavior:'smooth'}), 100); }} className="hover:text-gold transition-all">Services</button>
             <button onClick={() => handleViewChange('dashboard')} className="hover:text-gold transition-all">Dashboard</button>
             <button onClick={() => handleViewChange('partner')} className="hover:text-gold transition-all">Partner With Us</button>
-          </div>
-          <div className="flex flex-wrap justify-center gap-6 mb-12 text-[9px] font-black tracking-widest uppercase text-white/20">
-            <button className="hover:text-gold transition-all">Terms of Service</button>
-            <button className="hover:text-gold transition-all">Privacy Policy</button>
           </div>
           <p className="text-white/20 text-[10px] tracking-[0.4em] uppercase">&copy; 2024 Fresh Cut Studio. Luxury Grooming Experience.</p>
         </div>

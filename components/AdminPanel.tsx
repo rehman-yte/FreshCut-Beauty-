@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Booking, Professional, Profile, PartnerRequest } from '../types';
 import { supabase } from '../supabase';
@@ -18,23 +17,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   const [activeSection, setActiveSection] = useState<AdminSection>('overview');
   const [users, setUsers] = useState<Profile[]>([]);
-  const [shops, setShops] = useState(initialProfessionals);
-  const [adminBookings, setAdminBookings] = useState(initialBookings);
   const [pendingPartners, setPendingPartners] = useState<PartnerRequest[]>([]);
   const [priceVisibility, setPriceVisibility] = useState(true);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
 
-  // REAL DATA FETCHING
   useEffect(() => {
     fetchUsers();
     fetchPendingPartners();
     
-    // Set up real-time subscription for partner requests
+    // Fixed: Added mandatory 'schema' property to 'postgres_changes' filter to resolve TypeScript overload mismatch errors on lines 32 and 35
     const channel = supabase
-      .channel('partners-changes')
-      .on('postgres_changes', { event: 'INSERT', table: 'partners' }, payload => {
-        setNotificationCount(prev => prev + 1);
+      .channel('partners-changes-global')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partners' }, payload => {
+        fetchPendingPartners();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partners' }, payload => {
         fetchPendingPartners();
       })
       .subscribe();
@@ -47,13 +45,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const fetchUsers = async () => {
     const { data, error } = await supabase.from('profiles').select('*');
     if (!error && data) setUsers(data);
-    else {
-      // Mock fallback if DB not ready
-      setUsers([
-        { id: 'u1', full_name: 'Amit Kumar', email: 'amit@example.com', role: 'customer' },
-        { id: 'u2', full_name: 'Sara Khan', email: 'sara@example.com', role: 'professional' }
-      ]);
-    }
   };
 
   const fetchPendingPartners = async () => {
@@ -69,25 +60,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Logic Handlers with real DB integration
   const handleUserAction = async (id: string, action: string) => {
     if (action === 'delete') {
       const { error } = await supabase.from('profiles').delete().eq('id', id);
       if (!error) {
         setUsers(users.filter(u => u.id !== id));
-        alert('User deleted permanently from Database.');
+        alert('Action Confirmed: User deleted permanently.');
       }
     } else if (action === 'verify') {
       const { error } = await supabase.from('profiles').update({ is_partner_approved: true }).eq('id', id);
-      if (!error) alert('User verified in Database.');
+      if (!error) alert('Action Confirmed: User verified.');
     } else if (action === 'role') {
-      const newRole = prompt('Enter new role (customer/professional/admin):');
+      const newRole = prompt('Assign new role (customer/professional/admin):');
       if (newRole) {
         const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id);
         if (!error) fetchUsers();
       }
-    } else {
-      alert(`Toggling status for user ${id}...`);
     }
   };
 
@@ -99,25 +87,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       .eq('id', id);
 
     if (!error) {
-      alert(`Partner request ${id} ${status} successfully.`);
+      alert(`Database Updated: Partner ${status}.`);
       fetchPendingPartners();
     } else {
-      // Logic for demo/mock if table doesn't exist
-      setPendingPartners(prev => prev.filter(p => p.id !== id));
-      setNotificationCount(prev => Math.max(0, prev - 1));
-      alert(`DB Simulation: Partner ${action}d.`);
+      alert(`Sync Error: Could not update partner status.`);
     }
   };
 
   const handleGlobalAction = (action: string) => {
     if (action === 'toggle-prices') {
       setPriceVisibility(!priceVisibility);
-      alert(`Global Config Updated: Price visibility is now ${!priceVisibility ? 'Hidden' : 'Visible'}`);
+      alert(`System Config: Prices are now ${!priceVisibility ? 'Visible' : 'Hidden'}.`);
     } else if (action === 'maintenance') {
       setMaintenanceMode(!maintenanceMode);
-      alert(`System State Changed: Maintenance mode is now ${!maintenanceMode ? 'ON' : 'OFF'}`);
+      alert(`System State: Maintenance is now ${!maintenanceMode ? 'ON' : 'OFF'}.`);
     } else {
-      alert(`Action Triggered: ${action}`);
+      alert(`Global Broadcast Triggered: ${action}`);
     }
   };
 
@@ -135,10 +120,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     );
   };
 
+  const navItems: {id: AdminSection, label: string}[] = [
+    {id: 'overview', label: 'Dashboard'},
+    {id: 'users', label: 'User Management'},
+    {id: 'partners', label: 'Shops & Partners'},
+    {id: 'services', label: 'Services & Pricing'},
+    {id: 'bookings', label: 'Booking Control'},
+    {id: 'payments', label: 'Payments & Payouts'},
+    {id: 'content', label: 'Content Control'},
+    {id: 'security', label: 'Security & Auth'},
+    {id: 'notifications', label: 'Communication'},
+    {id: 'system', label: 'System Settings'},
+  ];
+
   return (
     <div className="min-h-screen bg-dark-900 pt-32 pb-20 px-4">
       <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8">
-        {/* Sidebar */}
         <aside className="lg:w-72 glass rounded-[2.5rem] p-6 border border-white/10 h-fit sticky top-32">
           <h3 className="text-gold text-[10px] font-black tracking-[0.4em] uppercase mb-8 ml-2">Studio Oversight</h3>
           <nav className="space-y-1.5">
@@ -159,22 +156,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </nav>
         </aside>
 
-        {/* Content Area */}
         <div className="flex-1 animate-fadeIn">
           <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div>
               <h1 className="text-4xl font-serif font-black gold-gradient mb-2 uppercase tracking-tighter">{activeSection.replace('-', ' ')}</h1>
-              <p className="text-white/40 text-xs font-medium tracking-wide">Architectural control panel & global state management</p>
+              <p className="text-white/40 text-xs font-medium tracking-wide">Architectural control panel & global state synchronization</p>
             </div>
-            {activeSection === 'overview' && (
-              <div className="flex gap-3">
-                <ActionButton label="View Dashboard" variant="gold" onClick={() => handleGlobalAction('fetch-stats')} />
-                <ActionButton label="Reports" onClick={() => handleGlobalAction('generate-report')} />
-              </div>
-            )}
           </div>
 
-          {/* User Management */}
           {activeSection === 'users' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center mb-4">
@@ -209,17 +198,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           )}
 
-          {/* Pending Partners & Shops */}
           {activeSection === 'partners' && (
             <div className="space-y-10">
               <div className="glass p-8 rounded-[2rem] border border-white/10">
                 <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
                   <h4 className="text-sm font-bold uppercase tracking-widest">Pending Requests ({pendingPartners.length})</h4>
-                  <ActionButton label="Refresh List" onClick={fetchPendingPartners} />
+                  <ActionButton label="Sync Requests" onClick={fetchPendingPartners} />
                 </div>
                 <div className="space-y-4">
                   {pendingPartners.length === 0 ? (
-                    <p className="text-white/20 text-xs italic py-10 text-center">No pending partnership requests at this time.</p>
+                    <p className="text-white/20 text-xs italic py-10 text-center uppercase tracking-widest">Awaiting new artisan applications...</p>
                   ) : (
                     pendingPartners.map(req => (
                       <div key={req.id} className="p-6 bg-white/5 rounded-3xl border border-white/5 hover:border-gold/20 transition-all">
@@ -231,13 +219,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 {req.category === 'gents' ? 'Barber' : 'Beauty'}
                               </span>
                             </div>
-                            <p className="text-xs text-white/60 mb-1">Owner: <span className="text-white font-bold">{req.owner_name}</span></p>
-                            <p className="text-xs text-white/60 mb-1">Location: <span className="text-white font-bold">{req.city}</span></p>
-                            <p className="text-[10px] text-white/30 uppercase tracking-widest mt-4">Submitted: {new Date(req.created_at).toLocaleDateString()}</p>
+                            <p className="text-xs text-white/60">Owner: <span className="text-white font-bold">{req.owner_name}</span> | {req.city}</p>
+                            <p className="text-[10px] text-white/30 uppercase tracking-widest mt-4">Log: {new Date(req.created_at).toLocaleString()}</p>
                           </div>
-                          <div className="flex md:flex-col justify-end gap-3 h-fit">
-                            <ActionButton label="Approve Shop" variant="gold" onClick={() => handlePartnerApproval(req.id, 'approve')} />
-                            <ActionButton label="Reject Request" variant="danger" onClick={() => handlePartnerApproval(req.id, 'reject')} />
+                          <div className="flex md:flex-col justify-end gap-3">
+                            <ActionButton label="Approve" variant="gold" onClick={() => handlePartnerApproval(req.id, 'approve')} />
+                            <ActionButton label="Reject" variant="danger" onClick={() => handlePartnerApproval(req.id, 'reject')} />
                           </div>
                         </div>
                       </div>
@@ -245,42 +232,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   )}
                 </div>
               </div>
-              
-              <div className="glass p-8 rounded-[2rem] border border-white/10">
-                <h4 className="text-sm font-bold uppercase tracking-widest mb-6">Global Shop Management</h4>
-                <div className="flex flex-wrap gap-3">
-                  <ActionButton label="Edit / Hide / Delete" onClick={() => handleGlobalAction('shop-edit')} />
-                  <ActionButton label="Edit Details" onClick={() => handleGlobalAction('shop-details')} />
-                  <ActionButton label="Feature" onClick={() => handleGlobalAction('shop-feature')} />
-                </div>
-              </div>
             </div>
           )}
 
-          {/* Services & Pricing */}
-          {activeSection === 'services' && (
-            <div className="glass p-8 rounded-[2rem] border border-white/10 space-y-8">
-              <div>
-                <h4 className="text-xs font-black uppercase tracking-widest mb-6">Service Inventory Controls</h4>
-                <div className="flex flex-wrap gap-4">
-                  <ActionButton label="Add Service" variant="gold" onClick={() => handleGlobalAction('service-add')} />
-                  <ActionButton label="Add Category" onClick={() => handleGlobalAction('category-add')} />
-                  <ActionButton label="Remove Service" variant="danger" onClick={() => handleGlobalAction('service-remove')} />
-                </div>
-              </div>
-              <div className="pt-8 border-t border-white/5">
-                <h4 className="text-xs font-black uppercase tracking-widest mb-6">Pricing Visibility Architecture</h4>
-                <div className="flex flex-wrap gap-4">
-                  <ActionButton label="Toggle Price Visibility" onClick={() => handleGlobalAction('toggle-prices')} />
-                  <ActionButton label="Login View Price" onClick={() => handleGlobalAction('toggle-login-price')} />
-                  <ActionButton label="Set Duration" onClick={() => handleGlobalAction('service-duration')} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Other sections remain connected to handleGlobalAction as configured previously */}
-          {/* Dashboard, Bookings, Payments, Content, Security, System sections... */}
           {activeSection === 'overview' && (
             <div className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -292,22 +246,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <div key={i} className="glass p-8 rounded-[2rem] border border-white/10">
                     <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">{stat.label}</span>
                     <span className="text-3xl font-serif font-black text-gold block mb-4">{stat.value}</span>
-                    <span className="text-[9px] font-bold text-gold/60 uppercase tracking-widest">{stat.trend} this month</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* ... Remaining placeholders stay mapped to handleGlobalAction ... */}
-          {activeSection === 'bookings' && (
-            <div className="space-y-6">
-              <div className="flex gap-4 mb-6">
-                <ActionButton label="View Bookings" variant="gold" onClick={() => handleGlobalAction('fetch-bookings')} />
-                <ActionButton label="Analytics" onClick={() => handleGlobalAction('booking-stats')} />
-              </div>
-              <div className="glass rounded-[2rem] border border-white/10 overflow-hidden text-center py-20 text-white/20 uppercase tracking-widest text-xs">
-                Booking override system active. No conflicts detected.
+          {activeSection === 'services' && (
+            <div className="glass p-8 rounded-[2rem] border border-white/10 space-y-8">
+              <div className="flex flex-wrap gap-4">
+                <ActionButton label="Toggle Price Visibility" onClick={() => handleGlobalAction('toggle-prices')} />
+                <ActionButton label="Add Service" variant="gold" onClick={() => handleGlobalAction('service-add')} />
+                <ActionButton label="Maintenance Mode" variant="danger" onClick={() => handleGlobalAction('maintenance')} />
               </div>
             </div>
           )}
