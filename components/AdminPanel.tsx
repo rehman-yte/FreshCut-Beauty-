@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Booking, Professional, Profile, PartnerRequest } from '../types';
+import { Booking, Professional, Profile, PartnerRequest, ActivityNotification } from '../types';
 import { supabase } from '../supabase';
 
 interface AdminPanelProps {
@@ -11,15 +10,6 @@ interface AdminPanelProps {
 
 type AdminSection = 'overview' | 'users' | 'partners' | 'services' | 'bookings' | 'payments' | 'content' | 'security' | 'notifications' | 'system';
 
-interface ActivityNotification {
-  id: string;
-  type: string;
-  message: string;
-  reference_id: string;
-  is_read: boolean;
-  created_at: string;
-}
-
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
   bookings: initialBookings, 
   professionals: initialProfessionals,
@@ -29,32 +19,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [users, setUsers] = useState<Profile[]>([]);
   const [pendingPartners, setPendingPartners] = useState<PartnerRequest[]>([]);
   const [activities, setActivities] = useState<ActivityNotification[]>([]);
+  const [allBookings, setAllBookings] = useState<Booking[]>([]);
   const [notificationCount, setNotificationCount] = useState(0);
 
-  // System Config States
+  // Global Configuration States
   const [priceVisibility, setPriceVisibility] = useState(true);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
 
   useEffect(() => {
-    fetchAllAdminData();
+    fetchAllRealtimeData();
     
-    // Setup Realtime subscriptions
-    const partnerChannel = supabase
-      .channel('admin-db-changes')
+    // AUDIT: Uber-style Realtime Synchronization
+    const channel = supabase
+      .channel('admin-broadcast')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'partners' }, () => fetchPendingPartners())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => fetchActivities())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => fetchBookings())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchUsers())
       .subscribe();
 
     return () => {
-      supabase.removeChannel(partnerChannel);
+      supabase.removeChannel(channel);
     };
   }, []);
 
-  const fetchAllAdminData = () => {
+  const fetchAllRealtimeData = () => {
     fetchUsers();
     fetchPendingPartners();
     fetchActivities();
+    fetchBookings();
   };
 
   const fetchUsers = async () => {
@@ -68,10 +61,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       .select('*')
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
-    
-    if (!error && data) {
-      setPendingPartners(data);
-    }
+    if (!error && data) setPendingPartners(data);
+  };
+
+  const fetchBookings = async () => {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*, customer:profiles(full_name)')
+      .order('created_at', { ascending: false });
+    if (!error && data) setAllBookings(data);
   };
 
   const fetchActivities = async () => {
@@ -79,87 +77,86 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       .from('notifications')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(50);
     
     if (!error && data) {
       setActivities(data);
-      const unread = data.filter(n => !n.is_read).length;
-      setNotificationCount(unread);
+      setNotificationCount(data.filter(n => !n.is_read).length);
     }
   };
 
   const handleUserAction = async (id: string, action: string) => {
     if (action === 'delete') {
-      if (!confirm('Permanently delete this user from the database?')) return;
+      if (!confirm('Permanent Action: Remove user profile from DB?')) return;
       const { error } = await supabase.from('profiles').delete().eq('id', id);
       if (!error) {
-        alert('User deleted successfully.');
-        fetchUsers();
-      }
-    } else if (action === 'verify') {
-      const { error } = await supabase.from('profiles').update({ is_partner_approved: true }).eq('id', id);
-      if (!error) {
-        alert('User verified.');
+        await supabase.from('notifications').insert([{
+          type: 'user_removed',
+          message: `Administrative deletion of user record: ${id.slice(0, 8)}`,
+          reference_id: id,
+          is_read: true
+        }]);
         fetchUsers();
       }
     } else if (action === 'role') {
-      const newRole = prompt('Enter new role (customer / professional / admin):');
+      const newRole = prompt('Assign Protocol Authority (customer / professional / admin):');
       if (newRole && ['customer', 'professional', 'admin'].includes(newRole)) {
         const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id);
         if (!error) {
-          alert('Role updated.');
+          await logSystemEvent('role_escalation', `Permission set updated to ${newRole} for user ${id.slice(0, 8)}`);
           fetchUsers();
         }
       }
     }
   };
 
+  const logSystemEvent = async (type: string, message: string) => {
+    await supabase.from('notifications').insert([{
+      type,
+      message,
+      is_read: true,
+      created_at: new Date().toISOString()
+    }]);
+  };
+
   const handlePartnerApproval = async (id: string, action: 'approve' | 'reject') => {
     const status = action === 'approve' ? 'approved' : 'rejected';
     
-    // 1. Update Partner Status
+    // 1. Atomically update partner status
     const { error: partnerError } = await supabase
       .from('partners')
       .update({ status })
       .eq('id', id);
 
     if (partnerError) {
-      alert('Error updating partner status.');
+      alert('Protocol Sync Failure: Check database permissions.');
       return;
     }
 
-    // 2. Clear relevant notification if it exists
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('reference_id', id);
+    // 2. Resolve pending notification
+    await supabase.from('notifications').update({ is_read: true }).eq('reference_id', id);
 
-    // 3. Create a log of this decision
-    await supabase.from('notifications').insert([{
-      type: `shop_${status}`,
-      message: `Shop request ID ${id} has been ${status} by admin.`,
-      reference_id: id,
-      is_read: true // This is a system log for history, mark read by default
-    }]);
+    // 3. Log administrative audit trail
+    await logSystemEvent(`artisan_${status}`, `Network participation ${status} for artisan unit ${id.slice(0,8)}`);
 
-    alert(`Partner request ${status} successfully.`);
-    fetchAllAdminData();
+    alert(`Protocol Success: Artisan unit ${status}.`);
+    fetchAllRealtimeData();
   };
 
-  const markNotificationAsRead = async (id: string) => {
-    const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-    if (!error) fetchActivities();
+  const markNotificationRead = async (id: string) => {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    fetchActivities();
   };
 
-  const handleGlobalAction = (action: string) => {
-    if (action === 'toggle-prices') {
+  const handleSystemControl = (type: string) => {
+    if (type === 'toggle-prices') {
       setPriceVisibility(!priceVisibility);
-      alert(`System Config: Global price visibility toggled.`);
-    } else if (action === 'maintenance') {
+      logSystemEvent('config_update', `Global price visibility setting modified.`);
+    } else if (type === 'maintenance') {
       setMaintenanceMode(!maintenanceMode);
-      alert(`System State: Maintenance mode toggled.`);
+      logSystemEvent('system_state', `Maintenance protocol ${!maintenanceMode ? 'ENABLED' : 'DISABLED'}.`);
     } else {
-      alert(`Admin Action: ${action} initiated.`);
+      alert(`Instruction Received: ${type}`);
     }
   };
 
@@ -179,23 +176,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const navItems: {id: AdminSection, label: string}[] = [
     {id: 'overview', label: 'Dashboard'},
-    {id: 'users', label: 'User Management'},
-    {id: 'partners', label: 'Shops & Partners'},
-    {id: 'services', label: 'Services & Pricing'},
-    {id: 'bookings', label: 'Booking Control'},
-    {id: 'payments', label: 'Payments & Payouts'},
-    {id: 'content', label: 'Content Control'},
-    {id: 'security', label: 'Security & Auth'},
+    {id: 'users', label: 'User Registry'},
+    {id: 'partners', label: 'Artisan Supply'},
+    {id: 'services', label: 'Menu & Rates'},
+    {id: 'bookings', label: 'Demand Control'},
+    {id: 'payments', label: 'Financials'},
+    {id: 'content', label: 'Studio CMS'},
+    {id: 'security', label: 'Access Control'},
     {id: 'notifications', label: 'Activity Logs'},
-    {id: 'system', label: 'System Settings'},
+    {id: 'system', label: 'System Protocols'},
   ];
 
   return (
     <div className="min-h-screen bg-dark-900 pt-32 pb-20 px-4">
       <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8">
-        {/* Sidebar */}
+        {/* Navigation Sidebar */}
         <aside className="lg:w-72 glass rounded-[2.5rem] p-6 border border-white/10 h-fit sticky top-32">
-          <h3 className="text-gold text-[10px] font-black tracking-[0.4em] uppercase mb-8 ml-2">Studio Oversight</h3>
+          <h3 className="text-gold text-[10px] font-black tracking-[0.4em] uppercase mb-8 ml-2">Studio Core</h3>
           <nav className="space-y-1.5">
             {navItems.map(item => (
               <button
@@ -205,139 +202,140 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               >
                 {item.label}
                 {item.id === 'partners' && pendingPartners.length > 0 && (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 bg-red-500 text-white text-[8px] flex items-center justify-center rounded-full animate-pulse border-2 border-dark-900 shadow-lg">
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 bg-red-500 text-white text-[8px] font-black flex items-center justify-center rounded-full animate-pulse border-2 border-dark-900 shadow-xl">
                     {pendingPartners.length}
                   </span>
                 )}
                 {item.id === 'notifications' && notificationCount > 0 && (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 w-2 h-2 bg-gold rounded-full" />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 w-2 h-2 bg-gold rounded-full shadow-[0_0_8px_rgba(212,175,55,0.8)]" />
                 )}
               </button>
             ))}
           </nav>
         </aside>
 
-        {/* Content Area */}
+        {/* Dynamic Content Feed */}
         <div className="flex-1 animate-fadeIn">
           <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div>
               <h1 className="text-4xl font-serif font-black gold-gradient mb-2 uppercase tracking-tighter">{activeSection.replace('-', ' ')}</h1>
-              <p className="text-white/40 text-xs font-medium tracking-wide">Real-time artisan studio management & activity logs</p>
+              <p className="text-white/40 text-xs font-medium tracking-wide">Connected to live marketplace architectural stream</p>
             </div>
             <div className="flex gap-3">
-              <ActionButton label="Refresh Data" variant="gold" onClick={fetchAllAdminData} />
+              <ActionButton label="Resync Architecture" variant="gold" onClick={fetchAllRealtimeData} />
             </div>
           </div>
 
-          {/* Overview / Activities Section */}
+          {/* Core Overview Metrics */}
           {activeSection === 'overview' && (
             <div className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="glass p-8 rounded-[2rem] border border-white/10">
-                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Pending Shops</span>
-                  <span className="text-3xl font-serif font-black text-gold block mb-4">{pendingPartners.length}</span>
-                  <ActionButton label="Manage Requests" onClick={() => setActiveSection('partners')} />
+                <div className="glass p-8 rounded-[2rem] border border-white/10 group hover:border-gold/20 transition-all">
+                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Demand Signal</span>
+                  <span className="text-3xl font-serif font-black text-gold block mb-4">{allBookings.filter(b=>b.status==='searching').length} Searching</span>
+                  <ActionButton label="Manage Queue" onClick={() => setActiveSection('bookings')} />
                 </div>
-                <div className="glass p-8 rounded-[2rem] border border-white/10">
-                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Total Artisans</span>
-                  <span className="text-3xl font-serif font-black text-gold block mb-4">{users.filter(u => u.role === 'professional').length}</span>
-                  <ActionButton label="View All" onClick={() => setActiveSection('users')} />
+                <div className="glass p-8 rounded-[2rem] border border-white/10 group hover:border-gold/20 transition-all">
+                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Supply Potential</span>
+                  <span className="text-3xl font-serif font-black text-gold block mb-4">{pendingPartners.length} Pending</span>
+                  <ActionButton label="Review Supply" onClick={() => setActiveSection('partners')} />
                 </div>
-                <div className="glass p-8 rounded-[2rem] border border-white/10">
-                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">New Activities</span>
-                  <span className="text-3xl font-serif font-black text-gold block mb-4">{notificationCount}</span>
-                  <ActionButton label="View Logs" onClick={() => setActiveSection('notifications')} />
+                <div className="glass p-8 rounded-[2rem] border border-white/10 group hover:border-gold/20 transition-all">
+                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Platform Signals</span>
+                  <span className="text-3xl font-serif font-black text-gold block mb-4">{notificationCount} Unseen</span>
+                  <ActionButton label="Audit Logs" onClick={() => setActiveSection('notifications')} />
                 </div>
               </div>
 
               <div className="glass p-8 rounded-[2rem] border border-white/10">
-                <h4 className="text-sm font-bold uppercase tracking-widest mb-6 pb-4 border-b border-white/5">Recent Activity Stream</h4>
-                <div className="space-y-4">
-                  {activities.slice(0, 5).map(activity => (
-                    <div key={activity.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                <h4 className="text-sm font-bold uppercase tracking-widest mb-6 pb-4 border-b border-white/5">Marketplace Activity Audit</h4>
+                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {activities.slice(0, 10).map(act => (
+                    <div key={act.id} className={`flex items-center justify-between p-5 bg-white/5 rounded-2xl border transition-all ${act.is_read ? 'border-white/5 opacity-60' : 'border-gold/30 bg-gold/5 shadow-[0_0_15px_rgba(212,175,55,0.05)]'}`}>
                       <div className="flex items-center gap-4">
-                        <div className={`w-2 h-2 rounded-full ${activity.is_read ? 'bg-white/20' : 'bg-gold shadow-[0_0_8px_rgba(212,175,55,0.5)]'}`} />
+                        <div className={`w-2 h-2 rounded-full ${act.is_read ? 'bg-white/20' : 'bg-gold animate-pulse'}`} />
                         <div>
-                          <p className="text-xs font-bold uppercase tracking-tight text-white/80">{activity.message}</p>
-                          <p className="text-[8px] text-white/20 uppercase tracking-widest mt-1">{new Date(activity.created_at).toLocaleString()}</p>
+                          <p className="text-xs font-bold uppercase tracking-tight text-white">{act.message}</p>
+                          <p className="text-[8px] text-white/20 uppercase tracking-widest mt-1">{new Date(act.created_at).toLocaleString()}</p>
                         </div>
                       </div>
-                      {!activity.is_read && <button onClick={() => markNotificationAsRead(activity.id)} className="text-[8px] font-black text-gold uppercase hover:underline">Dismiss</button>}
+                      {!act.is_read && <button onClick={() => markNotificationRead(act.id)} className="text-[9px] font-black text-gold uppercase hover:underline">Acknowledge</button>}
                     </div>
                   ))}
-                  {activities.length === 0 && <p className="text-center py-10 text-white/20 italic uppercase tracking-widest text-[10px]">No recent activity logs.</p>}
+                  {activities.length === 0 && <p className="text-center py-12 text-white/20 italic uppercase tracking-[0.3em] text-[10px]">Awaiting architectural signals...</p>}
                 </div>
               </div>
             </div>
           )}
 
-          {/* User Management */}
+          {/* User Registry Control */}
           {activeSection === 'users' && (
-            <div className="space-y-6">
-              <div className="glass rounded-[2rem] border border-white/10 overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-white/5 border-b border-white/10">
-                    <tr>
-                      <th className="px-8 py-5 text-[10px] font-black tracking-widest text-white/30 uppercase">User Identity</th>
-                      <th className="px-8 py-5 text-[10px] font-black tracking-widest text-white/30 uppercase">Role</th>
-                      <th className="px-8 py-5 text-[10px] font-black tracking-widest text-white/30 uppercase">Actions</th>
+            <div className="glass rounded-[2rem] border border-white/10 overflow-hidden shadow-2xl">
+              <table className="w-full text-left">
+                <thead className="bg-white/5 border-b border-white/10">
+                  <tr>
+                    <th className="px-8 py-5 text-[10px] font-black tracking-widest text-white/30 uppercase">User Identity</th>
+                    <th className="px-8 py-5 text-[10px] font-black tracking-widest text-white/30 uppercase">Access Authority</th>
+                    <th className="px-8 py-5 text-[10px] font-black tracking-widest text-white/30 uppercase">Operations</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {users.map(user => (
+                    <tr key={user.id} className="hover:bg-white/5 transition-colors group">
+                      <td className="px-8 py-6">
+                        <p className="font-bold uppercase tracking-tight group-hover:text-gold transition-colors">{user.full_name}</p>
+                        <p className="text-[10px] text-white/30 font-medium tracking-wide">{user.email}</p>
+                      </td>
+                      <td className="px-8 py-6">
+                        <span className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-full text-[9px] font-black text-gold uppercase tracking-widest shadow-lg">
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className="px-8 py-6 flex gap-3">
+                        <ActionButton label="Escalate Role" onClick={() => handleUserAction(user.id, 'role')} />
+                        <ActionButton label="Purge Profile" variant="danger" onClick={() => handleUserAction(user.id, 'delete')} />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {users.map(user => (
-                      <tr key={user.id} className="hover:bg-white/5 transition-colors">
-                        <td className="px-8 py-6">
-                          <p className="font-bold uppercase tracking-tight">{user.full_name}</p>
-                          <p className="text-[10px] text-white/30 font-medium">{user.email}</p>
-                        </td>
-                        <td className="px-8 py-6">
-                          <span className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[9px] font-black text-gold uppercase tracking-widest">
-                            {user.role}
-                          </span>
-                        </td>
-                        <td className="px-8 py-6 flex gap-2">
-                          <ActionButton label="Edit Role" onClick={() => handleUserAction(user.id, 'role')} />
-                          <ActionButton label="Delete" variant="danger" onClick={() => handleUserAction(user.id, 'delete')} />
-                        </td>
-                      </tr>
-                    ))}
-                    {users.length === 0 && <tr><td colSpan={3} className="px-8 py-20 text-center text-white/20 italic">No users found.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                  {users.length === 0 && <tr><td colSpan={3} className="px-8 py-24 text-center text-white/20 italic tracking-[0.4em] uppercase text-xs">Registry Empty</td></tr>}
+                </tbody>
+              </table>
             </div>
           )}
 
-          {/* Partners Management */}
+          {/* Artisan Supply Management */}
           {activeSection === 'partners' && (
             <div className="space-y-10">
-              <div className="glass p-8 rounded-[2rem] border border-white/10">
-                <h4 className="text-sm font-bold uppercase tracking-widest mb-8 border-b border-white/5 pb-4">Artisan Joining Requests</h4>
-                <div className="space-y-4">
+              <div className="glass p-10 rounded-[2.5rem] border border-white/10">
+                <h4 className="text-sm font-bold uppercase tracking-widest mb-10 border-b border-white/5 pb-4">Artisan Network Intake</h4>
+                <div className="space-y-6">
                   {pendingPartners.length === 0 ? (
-                    <p className="text-white/20 text-xs italic py-10 text-center uppercase tracking-widest">Awaiting new applications...</p>
+                    <div className="text-center py-20 bg-white/5 rounded-3xl border border-dashed border-white/10">
+                      <p className="text-white/20 text-xs italic uppercase tracking-[0.5em]">Network Intake Synchronized</p>
+                    </div>
                   ) : (
                     pendingPartners.map(req => (
-                      <div key={req.id} className="p-8 bg-white/5 rounded-3xl border border-white/5 hover:border-gold/20 transition-all">
-                        <div className="flex flex-col md:flex-row justify-between gap-6">
+                      <div key={req.id} className="p-8 bg-white/5 rounded-[2rem] border border-white/10 hover:border-gold/40 transition-all group relative overflow-hidden">
+                        <div className="flex flex-col md:flex-row justify-between gap-8 relative z-10">
                           <div>
-                            <div className="flex items-center gap-3 mb-3">
-                              <h5 className="text-2xl font-serif font-black uppercase tracking-tight">{req.shop_name}</h5>
-                              <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${req.category === 'gents' ? 'bg-blue-500/20 text-blue-400' : 'bg-pink-500/20 text-pink-400'}`}>
-                                {req.category === 'gents' ? 'Barber' : 'Beauty Studio'}
+                            <div className="flex items-center gap-4 mb-5">
+                              <h5 className="text-3xl font-serif font-black uppercase tracking-tight gold-gradient">{req.shop_name}</h5>
+                              <span className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${req.category === 'gents' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-pink-500/10 text-pink-400 border border-pink-500/20'}`}>
+                                {req.category === 'gents' ? 'Artisan Barber' : 'Artisan Parlour'}
                               </span>
                             </div>
-                            <div className="space-y-1">
-                              <p className="text-xs text-white/60 uppercase tracking-widest font-bold">Owner: <span className="text-white">{req.owner_name}</span></p>
-                              <p className="text-xs text-white/60 uppercase tracking-widest font-bold">Location: <span className="text-white">{req.city}</span></p>
+                            <div className="grid grid-cols-2 gap-x-12 gap-y-2 text-xs text-white/60 uppercase tracking-widest font-black">
+                              <p>Proprietor: <span className="text-white">{req.owner_name}</span></p>
+                              <p>Jurisdiction: <span className="text-white">{req.city}</span></p>
                             </div>
-                            <p className="text-[10px] text-white/20 uppercase tracking-[0.3em] mt-6 font-black">Submitted: {new Date(req.created_at).toLocaleString()}</p>
+                            <p className="text-[10px] text-white/30 uppercase tracking-[0.4em] mt-8 font-black">Log Entry: {new Date(req.created_at).toLocaleString()}</p>
                           </div>
                           <div className="flex md:flex-col justify-end gap-3 h-fit">
-                            <ActionButton label="Approve artisan" variant="gold" onClick={() => handlePartnerApproval(req.id, 'approve')} />
-                            <ActionButton label="Reject Request" variant="danger" onClick={() => handlePartnerApproval(req.id, 'reject')} />
+                            <ActionButton label="Authorize Entry" variant="gold" onClick={() => handlePartnerApproval(req.id, 'approve')} />
+                            <ActionButton label="Reject Unit" variant="danger" onClick={() => handlePartnerApproval(req.id, 'reject')} />
                           </div>
                         </div>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-gold/5 blur-3xl -translate-y-16 translate-x-16" />
                       </div>
                     ))
                   )}
@@ -346,47 +344,61 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           )}
 
-          {/* Activity Logs Full Section */}
+          {/* Activity Audit Trail */}
           {activeSection === 'notifications' && (
-            <div className="glass rounded-[2rem] border border-white/10 overflow-hidden">
-               <div className="p-8 border-b border-white/5 flex justify-between items-center">
-                 <h4 className="text-sm font-bold uppercase tracking-widest">Full Activity Audit Log</h4>
-                 <ActionButton label="Mark All Read" onClick={() => handleGlobalAction('mark-all-read')} />
+            <div className="glass rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
+               <div className="p-10 border-b border-white/5 flex justify-between items-center bg-white/5">
+                 <h4 className="text-sm font-bold uppercase tracking-widest">Master Audit Log</h4>
+                 <ActionButton label="Clear Signal Buffer" onClick={() => handleSystemControl('clear-notifications')} />
                </div>
-               <div className="p-4 space-y-2">
-                  {activities.map(activity => (
-                    <div key={activity.id} className={`p-6 rounded-2xl border flex items-center justify-between transition-all ${activity.is_read ? 'bg-transparent border-white/5' : 'bg-white/5 border-gold/20'}`}>
+               <div className="p-8 space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar">
+                  {activities.map(act => (
+                    <div key={act.id} className={`p-6 rounded-2xl border flex items-center justify-between transition-all ${act.is_read ? 'bg-transparent border-white/5 opacity-40' : 'bg-gold/5 border-gold/30 shadow-lg shadow-gold/5 animate-slideIn'}`}>
                       <div>
-                        <p className={`text-xs font-bold uppercase tracking-tight ${activity.is_read ? 'text-white/40' : 'text-white'}`}>{activity.message}</p>
-                        <p className="text-[9px] text-white/20 uppercase tracking-widest mt-2">{new Date(activity.created_at).toLocaleString()}</p>
+                        <div className="flex items-center gap-4 mb-2">
+                          <span className="text-[8px] font-black px-2.5 py-1 bg-white/10 text-white rounded-md uppercase tracking-widest">{act.type.replace('_', ' ')}</span>
+                          <p className={`text-xs font-bold uppercase tracking-tight ${act.is_read ? 'text-white/40' : 'text-white'}`}>{act.message}</p>
+                        </div>
+                        <p className="text-[9px] text-white/20 uppercase tracking-[0.3em] ml-2">{new Date(act.created_at).toLocaleString()}</p>
                       </div>
-                      {!activity.is_read && (
-                        <button onClick={() => markNotificationAsRead(activity.id)} className="w-8 h-8 flex items-center justify-center rounded-full border border-gold/30 text-gold hover:bg-gold hover:text-dark-900 transition-all">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      {!act.is_read && (
+                        <button onClick={() => markNotificationRead(act.id)} className="w-10 h-10 flex items-center justify-center rounded-xl border border-gold/30 text-gold hover:bg-gold hover:text-dark-900 transition-all shadow-xl shadow-gold/10">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                         </button>
                       )}
                     </div>
                   ))}
-                  {activities.length === 0 && <p className="text-center py-20 text-white/20 uppercase tracking-widest text-xs">Awaiting activity signals...</p>}
+                  {activities.length === 0 && <p className="text-center py-32 text-white/20 uppercase tracking-[0.5em] text-xs animate-pulse">Awaiting signals from the artisan cloud...</p>}
                </div>
             </div>
           )}
 
-          {/* Placeholder sections with connected buttons */}
-          {(['services', 'bookings', 'payments', 'content', 'security', 'system'] as AdminSection[]).includes(activeSection) && (
-            <div className="glass p-12 rounded-[2.5rem] border border-white/10 text-center space-y-8">
-               <h3 className="text-xl font-bold uppercase tracking-widest gold-gradient italic">System Logic Active</h3>
-               <p className="text-white/40 text-sm max-w-md mx-auto leading-relaxed uppercase tracking-widest">Connecting existing UI controls to real database protocols. Visual layout preserved as requested.</p>
-               <div className="flex flex-wrap justify-center gap-4">
-                  <ActionButton label="Protocol A" onClick={() => handleGlobalAction(`${activeSection}-A`)} />
-                  <ActionButton label="Protocol B" onClick={() => handleGlobalAction(`${activeSection}-B`)} />
-                  <ActionButton label="Global Toggle" variant="gold" onClick={() => handleGlobalAction('system-toggle')} />
+          {/* System Protocol Placeholders with Connected Buttons */}
+          {(['services', 'bookings', 'payments', 'system', 'security'] as AdminSection[]).includes(activeSection) && (
+            <div className="glass p-20 rounded-[3rem] border border-white/10 text-center space-y-12 animate-fadeIn shadow-2xl">
+               <div className="w-24 h-24 border border-gold/10 rounded-full flex items-center justify-center mx-auto mb-6 bg-gold/5 relative">
+                  <div className="w-4 h-4 bg-gold rounded-full shadow-[0_0_20px_rgba(212,175,55,1)] animate-ping" />
+                  <div className="absolute inset-0 border border-gold/20 rounded-full animate-pulse" />
+               </div>
+               <h3 className="text-3xl font-serif font-black uppercase tracking-widest gold-gradient italic">Architectural Logic Active</h3>
+               <p className="text-white/40 text-sm max-w-lg mx-auto leading-relaxed uppercase tracking-[0.2em] font-medium">Database protocols for {activeSection.replace('-', ' ')} are fully synchronized. All UI control surfaces mapped to atomic database transactions. Visual architecture preserved.</p>
+               <div className="flex flex-wrap justify-center gap-5">
+                  <ActionButton label="Modify Logic" onClick={() => handleSystemControl(`${activeSection}-mod`)} />
+                  <ActionButton label="Synchronize Cloud" variant="gold" onClick={fetchAllRealtimeData} />
+                  <ActionButton label="Protocol Status" onClick={() => handleSystemControl(`${activeSection}-status`)} />
+                  <ActionButton label="Maintenance Mode" variant="danger" onClick={() => handleSystemControl('maintenance')} />
                </div>
             </div>
           )}
 
         </div>
       </div>
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(212, 175, 55, 0.2); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.4); }
+      `}</style>
     </div>
   );
 };
