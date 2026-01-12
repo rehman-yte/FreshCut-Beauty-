@@ -49,6 +49,7 @@ const App: React.FC = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [currentView, setCurrentView] = useState<AppView>('home');
   const [heroImageIndex, setHeroImageIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Form States (UI Roadmap)
   const [email, setEmail] = useState('');
@@ -56,11 +57,18 @@ const App: React.FC = () => {
   const [fullName, setFullName] = useState('');
 
   useEffect(() => {
+    // Initial loading guard to prevent hydration mismatch/auth crash
+    const initTimer = setTimeout(() => setIsLoading(false), 300);
+
     // Reinstated 5 second interval for original feel
     const interval = setInterval(() => {
       setHeroImageIndex((prev) => (prev + 1) % HERO_IMAGES.length);
     }, 5000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleAuth = (e: React.FormEvent, type: 'login' | 'signup') => {
@@ -93,6 +101,14 @@ const App: React.FC = () => {
       setCurrentView(view as AppView);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-dark-900 flex items-center justify-center">
+        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse">Initializing Studio...</h1>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-dark-900 text-white selection:bg-gold selection:text-dark-900">

@@ -1,10 +1,20 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Since we're in a managed environment, we assume Supabase is configured via process.env
-// Note: In a real project, these would be your actual Supabase URL and Key
-const supabaseUrl = process.env.SUPABASE_URL || 'https://your-project.supabase.co';
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'your-anon-key';
+// Safety check for process.env to prevent "process is not defined" error in browser ESM environments
+const getEnv = (key: string): string | undefined => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env[key];
+    }
+  } catch (e) {
+    // Fallback if process is partially defined or proxied
+  }
+  return undefined;
+};
+
+const supabaseUrl = getEnv('SUPABASE_URL') || 'https://your-project.supabase.co';
+const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY') || 'your-anon-key';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
