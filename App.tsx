@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import { UserRole, Profile, Professional, Service, Category, Booking } from './types';
@@ -33,12 +34,9 @@ const App: React.FC = () => {
   const [fullName, setFullName] = useState('');
 
   useEffect(() => {
-    // Audit: Central data initialization to prevent blank pages
     const initApp = async () => {
       try {
         await fetchApprovedPartners();
-        // Check for existing session in localStorage or similar if implemented
-        // For now, we simulate initial load
       } finally {
         setIsLoading(false);
       }
@@ -53,7 +51,7 @@ const App: React.FC = () => {
   }, []);
 
   const fetchApprovedPartners = async () => {
-    // SYSTEM RULE: Only 'approved' status partners are fetched for public view
+    // SYSTEM RULE: Only 'approved' partners are fetched for public display
     const { data, error } = await supabase
       .from('partners')
       .select('*')
@@ -77,7 +75,7 @@ const App: React.FC = () => {
   };
 
   const logActivity = async (type: string, message: string, refId: string = '') => {
-    // AUDIT: Central Event Log for Admin oversight
+    // CENTRAL ACTIVITY LOG: Every action creates a notification for Admin oversight
     try {
       await supabase.from('notifications').insert([{
         type,
@@ -87,7 +85,7 @@ const App: React.FC = () => {
         created_at: new Date().toISOString()
       }]);
     } catch (e) {
-      console.warn('Marketplace Event Logging Failed:', e);
+      console.warn('Logging error:', e);
     }
   };
 
@@ -97,7 +95,7 @@ const App: React.FC = () => {
     
     const newProfile: Profile = {
       id: isAdmin ? 'admin-001' : 'user-' + Date.now(),
-      full_name: fullName || (isAdmin ? 'Chief Administrator' : 'Premium Client'),
+      full_name: fullName || (isAdmin ? 'Chief Admin' : 'Valued Client'),
       email: email,
       role: isAdmin ? 'admin' : 'customer'
     };
@@ -105,9 +103,9 @@ const App: React.FC = () => {
     setProfile(newProfile);
     
     if (type === 'signup') {
-      await logActivity('user_signup', `New member registration: ${newProfile.full_name}`, newProfile.id);
+      await logActivity('user_signup', `New registration: ${newProfile.full_name}`, newProfile.id);
     } else {
-      await logActivity('user_login', `Session started: ${newProfile.full_name}`, newProfile.id);
+      await logActivity('user_login', `${newProfile.full_name} authenticated`, newProfile.id);
     }
     
     setCurrentView(isAdmin ? 'admin-panel' : 'dashboard');
@@ -120,38 +118,47 @@ const App: React.FC = () => {
     }
 
     try {
-      const appTime = `${bookingData.date}T${bookingData.time}:00Z`;
-      
-      // AUDIT: Uber-style double-booking prevention check
-      const { data: existing } = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('professional_id', bookingData.professionalId)
-        .eq('appointment_time', appTime)
-        .neq('status', 'cancelled');
-
-      if (existing && existing.length > 0) {
-        alert('Conflict Detected: This slot was just reserved by another artisan request. Please select another time.');
+      // SLOT FORMATTING & DOUBLE BOOKING PREVENTION
+      // Ensure date and time are provided
+      if (!bookingData.date || !bookingData.time) {
+        alert('Invalid slot format. Please select both date and time.');
         return;
+      }
+
+      const appointmentTime = `${bookingData.date}T${bookingData.time}:00Z`;
+      
+      // If professional is pre-selected (optional in Uber-style), check for conflicts
+      if (bookingData.professionalId) {
+        const { data: existingBookings } = await supabase
+          .from('bookings')
+          .select('id')
+          .eq('professional_id', bookingData.professionalId)
+          .eq('appointment_time', appointmentTime)
+          .neq('status', 'cancelled');
+
+        if (existingBookings && existingBookings.length > 0) {
+          alert('Slot Conflict: This time slot is no longer available. Please select another time.');
+          return;
+        }
       }
 
       const bookingId = 'bk-' + Date.now();
       const { error } = await supabase.from('bookings').insert([{
         id: bookingId,
         customer_id: profile.id,
-        professional_id: bookingData.professionalId,
+        professional_id: bookingData.professionalId || null, // Can be null in Uber-style until matched
         service_id: bookingData.serviceId,
-        appointment_time: appTime,
+        appointment_time: appointmentTime,
         status: 'searching', // Initial marketplace state
         created_at: new Date().toISOString()
       }]);
 
       if (!error) {
-        await logActivity('booking_created', `Marketplace matching initiated by ${profile.full_name}`, bookingId);
+        await logActivity('booking_created', `New booking created by ${profile.full_name}`, bookingId);
         setCurrentView('payment-mockup');
       }
     } catch (err) {
-      console.error('Marketplace Transaction Failed:', err);
+      console.error('Booking failed:', err);
       setCurrentView('dashboard');
     }
   };
@@ -169,9 +176,9 @@ const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center">
-        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse mb-6">Synchronizing Studio Core...</h1>
+        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse mb-6">Synchronizing Studio...</h1>
         <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
-          <div className="h-full bg-gold animate-[progress_2s_infinite_ease-in-out]" style={{width: '30%'}} />
+          <div className="h-full bg-gold animate-[progress_2s_infinite_linear]" style={{width: '30%'}} />
         </div>
         <style>{`@keyframes progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }`}</style>
       </div>
@@ -191,13 +198,13 @@ const App: React.FC = () => {
       {currentView === 'login' && (
         <div className="min-h-screen pt-32 flex items-center justify-center p-4">
           <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Marketplace Access</h2>
+            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Marketplace Login</h2>
             <form onSubmit={(e) => handleAuth(e, 'login')} className="space-y-6">
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Identity (Email)" required />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Passcode" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Authenticate</button>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
+              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Sign In</button>
             </form>
-            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Request Account Registry</button>
+            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">New to Fresh Cut? Create Account</button>
           </div>
         </div>
       )}
@@ -207,12 +214,12 @@ const App: React.FC = () => {
           <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
             <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Registration</h2>
             <form onSubmit={(e) => handleAuth(e, 'signup')} className="space-y-6">
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Legal Name" required />
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Identity (Email)" required />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Secure Password" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Submit Registration</button>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
+              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Join Marketplace</button>
             </form>
-            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Existing Member Login</button>
+            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Already registered? Login</button>
           </div>
         </div>
       )}
@@ -246,24 +253,24 @@ const App: React.FC = () => {
       {currentView === 'payment-mockup' && (
         <div className="min-h-screen pt-32 pb-20 px-4 flex justify-center">
           <div className="max-w-2xl w-full animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black gold-gradient mb-12 text-center uppercase">Secure Checkout</h2>
+            <h2 className="text-4xl font-serif font-black gold-gradient mb-12 text-center uppercase">Confirm Payment</h2>
             <div className="glass rounded-[2.5rem] p-12 border border-gold/30">
               <div className="mb-8 border-b border-white/10 pb-8">
-                <h3 className="text-sm font-black tracking-widest uppercase text-white/40 mb-4">Summary</h3>
+                <h3 className="text-sm font-black tracking-widest uppercase text-white/40 mb-4">Marketplace Summary</h3>
                 <div className="flex justify-between items-center mb-2">
-                  <span>Elite Grooming Match</span>
+                  <span>Elite Grooming Reservation</span>
                   <span className="font-serif font-bold text-gold">₹999</span>
                 </div>
                 <div className="flex justify-between items-center mb-2">
-                  <span>Platform Fee</span>
+                  <span>Platform Processing Fee</span>
                   <span className="font-serif font-bold text-gold">₹49</span>
                 </div>
                 <div className="flex justify-between items-center text-xl font-bold mt-4">
-                  <span>Total Amount</span>
+                  <span>Total Payable</span>
                   <span className="gold-gradient">₹1,048</span>
                 </div>
               </div>
-              <button onClick={() => { logActivity('booking_confirmed', `Booking payment confirmed for ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Confirm Payment</button>
+              <button onClick={() => { logActivity('booking_confirmed', `Payment confirmed by ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Complete Transaction</button>
             </div>
           </div>
         </div>
@@ -279,12 +286,12 @@ const App: React.FC = () => {
               <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-dark-900" />
             </div>
             <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
-              <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Elite Artisan Marketplace &bull; Established 1994</span>
-              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Elite.<br/><span className="gold-gradient italic">Artistry.</span></h1>
-              <p className="text-lg md:text-xl text-white/70 mb-12 max-w-2xl mx-auto leading-relaxed">The ultimate decentralized destination for premium grooming. Uber-style matching with Master Barbers & Beauty Specialists.</p>
+              <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Uber-Style Artisan Matching &bull; Est. 1994</span>
+              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Master.<br/><span className="gold-gradient italic">Artisans.</span></h1>
+              <p className="text-lg md:text-xl text-white/70 mb-12 max-w-2xl mx-auto leading-relaxed">The ultimate decentralized destination for elite grooming. Instant matching with Master Barbers & Beauty Specialists.</p>
               <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
-                <button onClick={() => handleViewChange('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">FIND ARTISAN</button>
-                <button onClick={() => { document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' }); }} className="w-full sm:w-auto px-12 py-5 border border-white/20 hover:border-gold rounded-full text-xs font-black tracking-widest transition-all hover:text-gold uppercase text-center">STUDIO MENU</button>
+                <button onClick={() => handleViewChange('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">RESERVE SLOT</button>
+                <button onClick={() => { document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' }); }} className="w-full sm:w-auto px-12 py-5 border border-white/20 hover:border-gold rounded-full text-xs font-black tracking-widest transition-all hover:text-gold uppercase text-center">VIEW PORTFOLIO</button>
               </div>
             </div>
           </section>
@@ -292,8 +299,8 @@ const App: React.FC = () => {
           <section id="services" className="py-32 bg-dark-800 relative overflow-hidden">
             <div className="max-w-7xl mx-auto px-4 relative z-10">
               <div className="text-center mb-20">
-                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Demand Categories</span>
-                <h2 className="text-5xl font-serif font-bold mb-4 uppercase tracking-tight">Services Portfolio</h2>
+                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Demand Signals</span>
+                <h2 className="text-5xl font-serif font-bold mb-4 uppercase tracking-tight">Studio Offerings</h2>
                 <div className="h-1 w-20 bg-gold mx-auto rounded-full" />
               </div>
 
@@ -308,14 +315,14 @@ const App: React.FC = () => {
                         <div key={s.id} className="glass p-8 rounded-[2rem] border border-white/10 flex flex-col justify-between cursor-default group hover:border-gold/30 transition-all">
                           <div>
                             <h4 className="text-xl font-bold mb-2 uppercase tracking-tighter transition-colors group-hover:text-gold">{s.name}</h4>
-                            <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6">{s.duration_mins} MIN SESSION</p>
+                            <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6">{s.duration_mins} MINS</p>
                           </div>
                           <div className="flex justify-between items-center">
-                            {/* AUDIT: Visibility Rule - Price hidden until login */}
+                            {/* VISIBILITY RULE: Prices hidden until login */}
                             <span className={`text-2xl font-serif font-black gold-gradient transition-opacity duration-300 ${!profile ? 'invisible opacity-0' : 'visible opacity-100'}`}>
-                              {profile ? `₹${s.price}` : '---'}
+                              {profile ? `₹${s.price}` : ''}
                             </span>
-                            <button onClick={() => handleViewChange('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest transition-colors">Book Now</button>
+                            <button onClick={() => handleViewChange('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest transition-colors">Select</button>
                           </div>
                         </div>
                       ))}
@@ -329,8 +336,8 @@ const App: React.FC = () => {
           <section className="pb-32 bg-dark-800">
             <div className="max-w-7xl mx-auto px-4">
               <div className="text-center mb-16">
-                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Supply Showcase</span>
-                <h3 className="text-3xl font-serif font-bold uppercase tracking-tight">Active Professionals</h3>
+                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Supply Status</span>
+                <h3 className="text-3xl font-serif font-bold uppercase tracking-tight">Verified Professionals</h3>
                 <div className="h-px w-12 bg-gold/30 mx-auto mt-4" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -352,13 +359,13 @@ const App: React.FC = () => {
                       </div>
                       <div className="mt-6 text-center">
                         <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold mb-1">{p.name}</p>
-                        <p className="text-[8px] text-white/40 uppercase tracking-widest">{p.location_city || 'Central District'}</p>
+                        <p className="text-[8px] text-white/40 uppercase tracking-widest">{p.location_city || 'Central Hub'}</p>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="col-span-full py-24 text-center glass rounded-[2.5rem] border border-white/5">
-                    <p className="text-white/20 text-xs uppercase tracking-widest italic animate-pulse">Awaiting supply signals from the artisan network...</p>
+                    <p className="text-white/20 text-xs uppercase tracking-widest italic animate-pulse">Scanning for active supply signals...</p>
                   </div>
                 )}
               </div>
@@ -372,11 +379,11 @@ const App: React.FC = () => {
           <span className="text-4xl font-serif font-black gold-gradient mb-12 block tracking-tighter">FRESH CUT</span>
           <div className="flex flex-wrap justify-center gap-10 mb-12 text-[11px] font-black tracking-widest uppercase text-white/40">
             <button onClick={() => handleViewChange('home')} className="hover:text-gold transition-all">Home</button>
-            <button onClick={() => { handleViewChange('home'); setTimeout(() => document.getElementById('services')?.scrollIntoView({behavior:'smooth'}), 100); }} className="hover:text-gold transition-all">Portfolio</button>
+            <button onClick={() => { handleViewChange('home'); setTimeout(() => document.getElementById('services')?.scrollIntoView({behavior:'smooth'}), 100); }} className="hover:text-gold transition-all">Services</button>
             <button onClick={() => handleViewChange('dashboard')} className="hover:text-gold transition-all">Dashboard</button>
-            <button onClick={() => handleViewChange('partner')} className="hover:text-gold transition-all">Join Network</button>
+            <button onClick={() => handleViewChange('partner')} className="hover:text-gold transition-all">Partner Network</button>
           </div>
-          <p className="text-white/20 text-[10px] tracking-[0.4em] uppercase">&copy; 2024 Fresh Cut Studio. The Premium Marketplace Standard.</p>
+          <p className="text-white/20 text-[10px] tracking-[0.4em] uppercase">&copy; 2024 Fresh Cut Studio. Luxury Marketplace Ecosystem.</p>
         </div>
       </footer>
     </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Booking, Professional, Profile, PartnerRequest, ActivityNotification } from '../types';
 import { supabase } from '../supabase';
@@ -22,16 +23,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
   const [notificationCount, setNotificationCount] = useState(0);
 
-  // Global Configuration States
+  // Global Config States
   const [priceVisibility, setPriceVisibility] = useState(true);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
 
   useEffect(() => {
-    fetchAllRealtimeData();
+    fetchAllAdminData();
     
-    // AUDIT: Uber-style Realtime Synchronization
+    // SETUP REAL-TIME SYNC
     const channel = supabase
-      .channel('admin-broadcast')
+      .channel('admin-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'partners' }, () => fetchPendingPartners())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => fetchActivities())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => fetchBookings())
@@ -43,7 +44,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     };
   }, []);
 
-  const fetchAllRealtimeData = () => {
+  const fetchAllAdminData = () => {
     fetchUsers();
     fetchPendingPartners();
     fetchActivities();
@@ -87,60 +88,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleUserAction = async (id: string, action: string) => {
     if (action === 'delete') {
-      if (!confirm('Permanent Action: Remove user profile from DB?')) return;
+      if (!confirm('Permanent Action: Remove user profile from database?')) return;
       const { error } = await supabase.from('profiles').delete().eq('id', id);
       if (!error) {
-        await supabase.from('notifications').insert([{
-          type: 'user_removed',
-          message: `Administrative deletion of user record: ${id.slice(0, 8)}`,
-          reference_id: id,
-          is_read: true
-        }]);
+        alert('User removed from registry.');
         fetchUsers();
       }
     } else if (action === 'role') {
-      const newRole = prompt('Assign Protocol Authority (customer / professional / admin):');
+      const newRole = prompt('Assign Authority Level (customer / professional / admin):');
       if (newRole && ['customer', 'professional', 'admin'].includes(newRole)) {
         const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id);
         if (!error) {
-          await logSystemEvent('role_escalation', `Permission set updated to ${newRole} for user ${id.slice(0, 8)}`);
+          await supabase.from('notifications').insert([{
+            type: 'system_action',
+            message: `User role escalation to ${newRole} for ID ${id.slice(0, 8)}`,
+            is_read: true
+          }]);
           fetchUsers();
         }
       }
     }
   };
 
-  const logSystemEvent = async (type: string, message: string) => {
-    await supabase.from('notifications').insert([{
-      type,
-      message,
-      is_read: true,
-      created_at: new Date().toISOString()
-    }]);
-  };
-
   const handlePartnerApproval = async (id: string, action: 'approve' | 'reject') => {
     const status = action === 'approve' ? 'approved' : 'rejected';
     
-    // 1. Atomically update partner status
+    // 1. Update status atomically
     const { error: partnerError } = await supabase
       .from('partners')
       .update({ status })
       .eq('id', id);
 
     if (partnerError) {
-      alert('Protocol Sync Failure: Check database permissions.');
+      alert('Sync Failure: Check database connection.');
       return;
     }
 
-    // 2. Resolve pending notification
+    // 2. Clear relevant notification
     await supabase.from('notifications').update({ is_read: true }).eq('reference_id', id);
 
     // 3. Log administrative audit trail
-    await logSystemEvent(`artisan_${status}`, `Network participation ${status} for artisan unit ${id.slice(0,8)}`);
+    await supabase.from('notifications').insert([{
+      type: `artisan_${status}`,
+      message: `Artisan unit request ${id.slice(0,8)} was ${status} by Admin Protocol`,
+      reference_id: id,
+      is_read: true,
+      created_at: new Date().toISOString()
+    }]);
 
     alert(`Protocol Success: Artisan unit ${status}.`);
-    fetchAllRealtimeData();
+    fetchAllAdminData();
   };
 
   const markNotificationRead = async (id: string) => {
@@ -151,10 +148,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleSystemControl = (type: string) => {
     if (type === 'toggle-prices') {
       setPriceVisibility(!priceVisibility);
-      logSystemEvent('config_update', `Global price visibility setting modified.`);
+      alert(`System Config: Global price visibility toggled.`);
     } else if (type === 'maintenance') {
       setMaintenanceMode(!maintenanceMode);
-      logSystemEvent('system_state', `Maintenance protocol ${!maintenanceMode ? 'ENABLED' : 'DISABLED'}.`);
+      alert(`System State: Maintenance protocol ${!maintenanceMode ? 'ENABLED' : 'DISABLED'}.`);
     } else {
       alert(`Instruction Received: ${type}`);
     }
@@ -219,14 +216,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div>
               <h1 className="text-4xl font-serif font-black gold-gradient mb-2 uppercase tracking-tighter">{activeSection.replace('-', ' ')}</h1>
-              <p className="text-white/40 text-xs font-medium tracking-wide">Connected to live marketplace architectural stream</p>
+              <p className="text-white/40 text-xs font-medium tracking-wide">Connected to live architectural stream</p>
             </div>
             <div className="flex gap-3">
-              <ActionButton label="Resync Architecture" variant="gold" onClick={fetchAllRealtimeData} />
+              <ActionButton label="Resync Cloud" variant="gold" onClick={fetchAllAdminData} />
             </div>
           </div>
 
-          {/* Core Overview Metrics */}
+          {/* Overview Metrics */}
           {activeSection === 'overview' && (
             <div className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -236,21 +233,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <ActionButton label="Manage Queue" onClick={() => setActiveSection('bookings')} />
                 </div>
                 <div className="glass p-8 rounded-[2rem] border border-white/10 group hover:border-gold/20 transition-all">
-                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Supply Potential</span>
-                  <span className="text-3xl font-serif font-black text-gold block mb-4">{pendingPartners.length} Pending</span>
-                  <ActionButton label="Review Supply" onClick={() => setActiveSection('partners')} />
+                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Artisan Intake</span>
+                  <span className="text-3xl font-serif font-black text-gold block mb-4">{pendingPartners.length} New</span>
+                  <ActionButton label="Review Intake" onClick={() => setActiveSection('partners')} />
                 </div>
                 <div className="glass p-8 rounded-[2rem] border border-white/10 group hover:border-gold/20 transition-all">
-                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Platform Signals</span>
+                  <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] block mb-2">Platform Events</span>
                   <span className="text-3xl font-serif font-black text-gold block mb-4">{notificationCount} Unseen</span>
-                  <ActionButton label="Audit Logs" onClick={() => setActiveSection('notifications')} />
+                  <ActionButton label="Audit Stream" onClick={() => setActiveSection('notifications')} />
                 </div>
               </div>
 
               <div className="glass p-8 rounded-[2rem] border border-white/10">
-                <h4 className="text-sm font-bold uppercase tracking-widest mb-6 pb-4 border-b border-white/5">Marketplace Activity Audit</h4>
+                <h4 className="text-sm font-bold uppercase tracking-widest mb-6 pb-4 border-b border-white/5">Artisan Activity Audit</h4>
                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                  {activities.slice(0, 10).map(act => (
+                  {activities.slice(0, 15).map(act => (
                     <div key={act.id} className={`flex items-center justify-between p-5 bg-white/5 rounded-2xl border transition-all ${act.is_read ? 'border-white/5 opacity-60' : 'border-gold/30 bg-gold/5 shadow-[0_0_15px_rgba(212,175,55,0.05)]'}`}>
                       <div className="flex items-center gap-4">
                         <div className={`w-2 h-2 rounded-full ${act.is_read ? 'bg-white/20' : 'bg-gold animate-pulse'}`} />
@@ -262,13 +259,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       {!act.is_read && <button onClick={() => markNotificationRead(act.id)} className="text-[9px] font-black text-gold uppercase hover:underline">Acknowledge</button>}
                     </div>
                   ))}
-                  {activities.length === 0 && <p className="text-center py-12 text-white/20 italic uppercase tracking-[0.3em] text-[10px]">Awaiting architectural signals...</p>}
+                  {activities.length === 0 && <p className="text-center py-12 text-white/20 italic uppercase tracking-[0.3em] text-[10px]">Awaiting signals from the cloud...</p>}
                 </div>
               </div>
             </div>
           )}
 
-          {/* User Registry Control */}
+          {/* User Management Section */}
           {activeSection === 'users' && (
             <div className="glass rounded-[2rem] border border-white/10 overflow-hidden shadow-2xl">
               <table className="w-full text-left">
@@ -284,7 +281,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <tr key={user.id} className="hover:bg-white/5 transition-colors group">
                       <td className="px-8 py-6">
                         <p className="font-bold uppercase tracking-tight group-hover:text-gold transition-colors">{user.full_name}</p>
-                        <p className="text-[10px] text-white/30 font-medium tracking-wide">{user.email}</p>
+                        <p className="text-[10px] text-white/30 font-medium tracking-wide lowercase">{user.email}</p>
                       </td>
                       <td className="px-8 py-6">
                         <span className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-full text-[9px] font-black text-gold uppercase tracking-widest shadow-lg">
@@ -292,26 +289,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </span>
                       </td>
                       <td className="px-8 py-6 flex gap-3">
-                        <ActionButton label="Escalate Role" onClick={() => handleUserAction(user.id, 'role')} />
-                        <ActionButton label="Purge Profile" variant="danger" onClick={() => handleUserAction(user.id, 'delete')} />
+                        <ActionButton label="Modify Authority" onClick={() => handleUserAction(user.id, 'role')} />
+                        <ActionButton label="Purge Unit" variant="danger" onClick={() => handleUserAction(user.id, 'delete')} />
                       </td>
                     </tr>
                   ))}
-                  {users.length === 0 && <tr><td colSpan={3} className="px-8 py-24 text-center text-white/20 italic tracking-[0.4em] uppercase text-xs">Registry Empty</td></tr>}
+                  {users.length === 0 && <tr><td colSpan={3} className="px-8 py-24 text-center text-white/20 italic tracking-[0.4em] uppercase text-xs">Scanning cloud for units...</td></tr>}
                 </tbody>
               </table>
             </div>
           )}
 
-          {/* Artisan Supply Management */}
+          {/* Artisan Intake Section */}
           {activeSection === 'partners' && (
             <div className="space-y-10">
               <div className="glass p-10 rounded-[2.5rem] border border-white/10">
-                <h4 className="text-sm font-bold uppercase tracking-widest mb-10 border-b border-white/5 pb-4">Artisan Network Intake</h4>
+                <h4 className="text-sm font-bold uppercase tracking-widest mb-10 border-b border-white/5 pb-4">Artisan Network Submissions</h4>
                 <div className="space-y-6">
                   {pendingPartners.length === 0 ? (
                     <div className="text-center py-20 bg-white/5 rounded-3xl border border-dashed border-white/10">
-                      <p className="text-white/20 text-xs italic uppercase tracking-[0.5em]">Network Intake Synchronized</p>
+                      <p className="text-white/20 text-xs italic uppercase tracking-[0.5em]">Network Intake Clear</p>
                     </div>
                   ) : (
                     pendingPartners.map(req => (
@@ -326,16 +323,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             </div>
                             <div className="grid grid-cols-2 gap-x-12 gap-y-2 text-xs text-white/60 uppercase tracking-widest font-black">
                               <p>Proprietor: <span className="text-white">{req.owner_name}</span></p>
-                              <p>Jurisdiction: <span className="text-white">{req.city}</span></p>
+                              <p>District: <span className="text-white">{req.city}</span></p>
                             </div>
-                            <p className="text-[10px] text-white/30 uppercase tracking-[0.4em] mt-8 font-black">Log Entry: {new Date(req.created_at).toLocaleString()}</p>
+                            <p className="text-[10px] text-white/30 uppercase tracking-[0.4em] mt-8 font-black">Submittion Logic Entry: {new Date(req.created_at).toLocaleString()}</p>
                           </div>
                           <div className="flex md:flex-col justify-end gap-3 h-fit">
-                            <ActionButton label="Authorize Entry" variant="gold" onClick={() => handlePartnerApproval(req.id, 'approve')} />
+                            <ActionButton label="Authorize Unit" variant="gold" onClick={() => handlePartnerApproval(req.id, 'approve')} />
                             <ActionButton label="Reject Unit" variant="danger" onClick={() => handlePartnerApproval(req.id, 'reject')} />
                           </div>
                         </div>
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-gold/5 blur-3xl -translate-y-16 translate-x-16" />
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-gold/5 blur-3xl -translate-y-16 translate-x-16 opacity-30" />
                       </div>
                     ))
                   )}
@@ -344,12 +341,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           )}
 
-          {/* Activity Audit Trail */}
+          {/* Activity Logs Stream Section */}
           {activeSection === 'notifications' && (
             <div className="glass rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
                <div className="p-10 border-b border-white/5 flex justify-between items-center bg-white/5">
-                 <h4 className="text-sm font-bold uppercase tracking-widest">Master Audit Log</h4>
-                 <ActionButton label="Clear Signal Buffer" onClick={() => handleSystemControl('clear-notifications')} />
+                 <h4 className="text-sm font-bold uppercase tracking-widest">Master Audit History</h4>
+                 <ActionButton label="Flush Buffer" onClick={() => handleSystemControl('clear-notifications')} />
                </div>
                <div className="p-8 space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar">
                   {activities.map(act => (
@@ -368,24 +365,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       )}
                     </div>
                   ))}
-                  {activities.length === 0 && <p className="text-center py-32 text-white/20 uppercase tracking-[0.5em] text-xs animate-pulse">Awaiting signals from the artisan cloud...</p>}
+                  {activities.length === 0 && <p className="text-center py-32 text-white/20 uppercase tracking-[0.5em] text-xs animate-pulse">Scanning signal clouds...</p>}
                </div>
             </div>
           )}
 
-          {/* System Protocol Placeholders with Connected Buttons */}
+          {/* Generic System Protocol Logic */}
           {(['services', 'bookings', 'payments', 'system', 'security'] as AdminSection[]).includes(activeSection) && (
             <div className="glass p-20 rounded-[3rem] border border-white/10 text-center space-y-12 animate-fadeIn shadow-2xl">
                <div className="w-24 h-24 border border-gold/10 rounded-full flex items-center justify-center mx-auto mb-6 bg-gold/5 relative">
                   <div className="w-4 h-4 bg-gold rounded-full shadow-[0_0_20px_rgba(212,175,55,1)] animate-ping" />
                   <div className="absolute inset-0 border border-gold/20 rounded-full animate-pulse" />
                </div>
-               <h3 className="text-3xl font-serif font-black uppercase tracking-widest gold-gradient italic">Architectural Logic Active</h3>
-               <p className="text-white/40 text-sm max-w-lg mx-auto leading-relaxed uppercase tracking-[0.2em] font-medium">Database protocols for {activeSection.replace('-', ' ')} are fully synchronized. All UI control surfaces mapped to atomic database transactions. Visual architecture preserved.</p>
+               <h3 className="text-3xl font-serif font-black uppercase tracking-widest gold-gradient italic">Structural Protocols Active</h3>
+               <p className="text-white/40 text-sm max-w-lg mx-auto leading-relaxed uppercase tracking-[0.2em] font-medium">Cloud protocols for {activeSection.replace('-', ' ')} are synchronized. Architectural integrity preserved.</p>
                <div className="flex flex-wrap justify-center gap-5">
-                  <ActionButton label="Modify Logic" onClick={() => handleSystemControl(`${activeSection}-mod`)} />
-                  <ActionButton label="Synchronize Cloud" variant="gold" onClick={fetchAllRealtimeData} />
-                  <ActionButton label="Protocol Status" onClick={() => handleSystemControl(`${activeSection}-status`)} />
+                  <ActionButton label="Synchronize Cloud" variant="gold" onClick={fetchAllAdminData} />
+                  <ActionButton label="Logic Status" onClick={() => handleSystemControl(`${activeSection}-status`)} />
                   <ActionButton label="Maintenance Mode" variant="danger" onClick={() => handleSystemControl('maintenance')} />
                </div>
             </div>
