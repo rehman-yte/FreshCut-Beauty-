@@ -1,34 +1,39 @@
 
 import React, { useState } from 'react';
-import { Booking, Barber, Profile } from '../types';
+// Changed Barber to Professional to match types.ts
+import { Booking, Professional, Profile } from '../types';
 
 interface AdminPanelProps {
   bookings: Booking[];
-  barbers: Barber[];
-  customers: Profile[];
+  // Renamed barbers to professionals to match App.tsx usage
+  professionals: Professional[];
+  // Made optional as they are not passed from App.tsx
+  customers?: Profile[];
   onUpdateStatus: (id: string, status: string) => void;
-  onDeleteBarber: (id: string) => void;
-  onCreateBarber: (data: Partial<Barber>) => void;
+  onDeleteProfessional?: (id: string) => void;
+  onCreateProfessional?: (data: Partial<Professional>) => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
   bookings, 
-  barbers, 
+  professionals, 
   onUpdateStatus,
-  onDeleteBarber,
-  onCreateBarber
+  onDeleteProfessional,
+  onCreateProfessional
 }) => {
-  const [activeTab, setActiveTab] = useState<'bookings' | 'barbers'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'professionals'>('bookings');
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newBarber, setNewBarber] = useState({ name: '', bio: '', specialties: '', image_url: '' });
+  const [newProfessional, setNewProfessional] = useState({ name: '', bio: '', specialties: '', image_url: '' });
 
-  const handleSubmitBarber = (e: React.FormEvent) => {
+  const handleSubmitProfessional = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreateBarber({
-      ...newBarber,
-      specialties: newBarber.specialties.split(',').map(s => s.trim())
-    });
-    setNewBarber({ name: '', bio: '', specialties: '', image_url: '' });
+    if (onCreateProfessional) {
+      onCreateProfessional({
+        ...newProfessional,
+        specialties: newProfessional.specialties.split(',').map(s => s.trim())
+      });
+    }
+    setNewProfessional({ name: '', bio: '', specialties: '', image_url: '' });
     setShowAddForm(false);
   };
 
@@ -48,8 +53,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               Bookings
             </button>
             <button 
-              onClick={() => setActiveTab('barbers')}
-              className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${activeTab === 'barbers' ? 'bg-gold text-dark-900' : 'hover:text-gold'}`}
+              onClick={() => setActiveTab('professionals')}
+              className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${activeTab === 'professionals' ? 'bg-gold text-dark-900' : 'hover:text-gold'}`}
             >
               Our Experts
             </button>
@@ -74,7 +79,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   {bookings.map((booking) => (
                     <tr key={booking.id} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-6 py-4 font-medium">{booking.customer?.full_name || 'N/A'}</td>
-                      <td className="px-6 py-4 font-medium">{booking.barber?.name}</td>
+                      {/* Changed booking.barber to booking.professional */}
+                      <td className="px-6 py-4 font-medium">{booking.professional?.name}</td>
                       <td className="px-6 py-4 text-white/70">{booking.service?.name}</td>
                       <td className="px-6 py-4 text-white/70">{booking.appointment_time}</td>
                       <td className="px-6 py-4">
@@ -107,20 +113,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         )}
 
-        {activeTab === 'barbers' && (
+        {activeTab === 'professionals' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {barbers.map((barber) => (
-              <div key={barber.id} className="glass rounded-3xl p-6 border border-white/10 relative overflow-hidden group">
-                <img src={barber.image_url} alt={barber.name} className="w-24 h-24 rounded-2xl object-cover mb-4 border-2 border-gold/50" />
-                <h3 className="text-xl font-bold mb-1">{barber.name}</h3>
-                <p className="text-sm text-white/50 mb-4 h-12 overflow-hidden line-clamp-2">{barber.bio}</p>
+            {professionals.map((professional) => (
+              <div key={professional.id} className="glass rounded-3xl p-6 border border-white/10 relative overflow-hidden group">
+                <img src={professional.image_url} alt={professional.name} className="w-24 h-24 rounded-2xl object-cover mb-4 border-2 border-gold/50" />
+                <h3 className="text-xl font-bold mb-1">{professional.name}</h3>
+                <p className="text-sm text-white/50 mb-4 h-12 overflow-hidden line-clamp-2">{professional.bio}</p>
                 <div className="flex flex-wrap gap-2 mb-6">
-                  {barber.specialties.map(s => (
+                  {professional.specialties.map(s => (
                     <span key={s} className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-bold uppercase tracking-wider text-gold">{s}</span>
                   ))}
                 </div>
                 <button 
-                  onClick={() => onDeleteBarber(barber.id)}
+                  onClick={() => onDeleteProfessional && onDeleteProfessional(professional.id)}
                   className="w-full py-3 border border-red-500/50 text-red-500 rounded-xl text-xs font-black tracking-widest uppercase hover:bg-red-500 hover:text-white transition-all"
                 >
                   Remove Specialist
@@ -129,26 +135,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             ))}
             
             {showAddForm ? (
-              <form onSubmit={handleSubmitBarber} className="glass rounded-3xl p-6 border border-gold/30 space-y-4 animate-fadeIn">
+              <form onSubmit={handleSubmitProfessional} className="glass rounded-3xl p-6 border border-gold/30 space-y-4 animate-fadeIn">
                 <input 
                   type="text" placeholder="Specialist Name" required
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-gold outline-none"
-                  value={newBarber.name} onChange={e => setNewBarber({...newBarber, name: e.target.value})}
+                  value={newProfessional.name} onChange={e => setNewProfessional({...newProfessional, name: e.target.value})}
                 />
                 <input 
                   type="text" placeholder="Image URL" required
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-gold outline-none"
-                  value={newBarber.image_url} onChange={e => setNewBarber({...newBarber, image_url: e.target.value})}
+                  value={newProfessional.image_url} onChange={e => setNewProfessional({...newProfessional, image_url: e.target.value})}
                 />
                 <input 
                   type="text" placeholder="Specialties (comma separated)" required
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-gold outline-none"
-                  value={newBarber.specialties} onChange={e => setNewBarber({...newBarber, specialties: e.target.value})}
+                  value={newProfessional.specialties} onChange={e => setNewProfessional({...newProfessional, specialties: e.target.value})}
                 />
                 <textarea 
                   placeholder="Specialist Bio" required
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-gold outline-none h-20"
-                  value={newBarber.bio} onChange={e => setNewBarber({...newBarber, bio: e.target.value})}
+                  value={newProfessional.bio} onChange={e => setNewProfessional({...newProfessional, bio: e.target.value})}
                 />
                 <div className="flex space-x-2">
                   <button type="submit" className="flex-1 py-3 bg-gold text-dark-900 rounded-xl font-black text-[10px] tracking-widest uppercase">Save</button>

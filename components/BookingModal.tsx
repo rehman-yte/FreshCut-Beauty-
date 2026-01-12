@@ -1,18 +1,21 @@
 
 import React, { useState, useEffect } from 'react';
-import { Barber, Service } from '../types';
+// Changed Barber to Professional as per types.ts
+import { Professional, Service } from '../types';
 
 interface BookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  barbers: Barber[];
+  // Changed barbers to professionals
+  professionals: Professional[];
   services: Service[];
-  onSubmit: (data: { barberId: string; serviceId: string; date: string; time: string }) => void;
+  onSubmit: (data: { professionalId: string; serviceId: string; date: string; time: string }) => void;
 }
 
-export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, barbers, services, onSubmit }) => {
+export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, professionals, services, onSubmit }) => {
   const [step, setStep] = useState(1);
-  const [selectedBarber, setSelectedBarber] = useState<string>('');
+  // Changed selectedBarber to selectedProfessional
+  const [selectedProfessional, setSelectedProfessional] = useState<string>('');
   const [selectedService, setSelectedService] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
@@ -49,19 +52,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, bar
             <div className="space-y-6 animate-fadeIn">
               <p className="text-lg font-medium">Select a Specialist</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {barbers.map((barber) => (
+                {professionals.map((professional) => (
                   <button
-                    key={barber.id}
-                    onClick={() => setSelectedBarber(barber.id)}
-                    className={`p-4 rounded-2xl border transition-all ${selectedBarber === barber.id ? 'border-gold bg-gold/10' : 'border-white/10 hover:border-white/30'}`}
+                    key={professional.id}
+                    onClick={() => setSelectedProfessional(professional.id)}
+                    className={`p-4 rounded-2xl border transition-all ${selectedProfessional === professional.id ? 'border-gold bg-gold/10' : 'border-white/10 hover:border-white/30'}`}
                   >
-                    <img src={barber.image_url} alt={barber.name} className="w-16 h-16 rounded-full mx-auto mb-3 object-cover border-2 border-gold/30" />
-                    <p className="text-sm font-semibold text-center">{barber.name}</p>
+                    <img src={professional.image_url} alt={professional.name} className="w-16 h-16 rounded-full mx-auto mb-3 object-cover border-2 border-gold/30" />
+                    <p className="text-sm font-semibold text-center">{professional.name}</p>
                   </button>
                 ))}
               </div>
               <button 
-                disabled={!selectedBarber}
+                disabled={!selectedProfessional}
                 onClick={handleNext}
                 className="w-full py-4 bg-gold text-dark-900 font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gold-light transition-all"
               >
@@ -128,7 +131,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, bar
                 <button onClick={handleBack} className="flex-1 py-4 border border-white/20 rounded-xl font-bold hover:bg-white/5">Back</button>
                 <button 
                   disabled={!selectedDate || !selectedTime}
-                  onClick={() => onSubmit({ barberId: selectedBarber, serviceId: selectedService, date: selectedDate, time: selectedTime })}
+                  onClick={() => onSubmit({ professionalId: selectedProfessional, serviceId: selectedService, date: selectedDate, time: selectedTime })}
                   className="flex-[2] py-4 bg-gold text-dark-900 font-bold rounded-xl disabled:opacity-50 hover:bg-gold-light transition-all"
                 >
                   Confirm Booking

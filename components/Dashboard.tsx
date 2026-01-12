@@ -27,12 +27,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, bookings, onUpdateSt
               <thead>
                 <tr className="bg-white/5 border-b border-white/10">
                   <th className="px-6 py-4 text-xs font-black tracking-widest text-white/50 uppercase">
-                    {role === 'barber' ? 'Customer' : 'Barber'}
+                    {/* Changed barber to professional to match UserRole type */}
+                    {role === 'professional' ? 'Customer' : 'Professional'}
                   </th>
                   <th className="px-6 py-4 text-xs font-black tracking-widest text-white/50 uppercase">Service</th>
                   <th className="px-6 py-4 text-xs font-black tracking-widest text-white/50 uppercase">Date & Time</th>
                   <th className="px-6 py-4 text-xs font-black tracking-widest text-white/50 uppercase">Status</th>
-                  {role === 'barber' && (
+                  {/* Changed barber to professional */}
+                  {role === 'professional' && (
                     <th className="px-6 py-4 text-xs font-black tracking-widest text-white/50 uppercase">Actions</th>
                   )}
                 </tr>
@@ -48,7 +50,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, bookings, onUpdateSt
                   bookings.map((booking) => (
                     <tr key={booking.id} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-6 py-4 font-bold">
-                        {role === 'barber' ? booking.customer?.full_name : booking.barber?.name}
+                        {/* Corrected role check and booking property name from barber to professional */}
+                        {role === 'professional' ? booking.customer?.full_name : booking.professional?.name}
                       </td>
                       <td className="px-6 py-4 text-white/70">{booking.service?.name}</td>
                       <td className="px-6 py-4 text-white/70">{booking.appointment_time}</td>
@@ -62,7 +65,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, bookings, onUpdateSt
                           {booking.status}
                         </span>
                       </td>
-                      {role === 'barber' && onUpdateStatus && (
+                      {/* Changed barber to professional */}
+                      {role === 'professional' && onUpdateStatus && (
                         <td className="px-6 py-4">
                           <div className="flex space-x-2">
                             <button 
