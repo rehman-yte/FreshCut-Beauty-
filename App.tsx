@@ -73,14 +73,19 @@ const App: React.FC = () => {
 
   const handleAuth = (e: React.FormEvent, type: 'login' | 'signup') => {
     e.preventDefault();
+    
+    // STRICT ADMIN LOGIN CHECK
+    const isAdmin = email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@';
+    
     setProfile({
-      id: '1',
-      full_name: fullName || 'Valued Client',
+      id: isAdmin ? 'admin-001' : 'user-' + Date.now(),
+      full_name: fullName || (isAdmin ? 'Chief Admin' : 'Valued Client'),
       email: email,
-      role: email.includes('admin') ? 'admin' : 'customer'
+      role: isAdmin ? 'admin' : 'customer'
     });
-    // Algorithmic check: if admin email used, redirect to admin-panel, else dashboard
-    setCurrentView(email.includes('admin') ? 'admin-panel' : 'dashboard');
+    
+    // Algorithmic check: if admin credentials used, redirect to admin-panel, else dashboard
+    setCurrentView(isAdmin ? 'admin-panel' : 'dashboard');
   };
 
   const handleBookingComplete = (data: any) => {
