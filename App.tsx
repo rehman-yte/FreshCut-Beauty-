@@ -1,27 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import { UserRole, Profile, Professional, Service, Booking, Category, PartnerRequest } from './types';
+import { UserRole, Profile, Professional, Service, Category } from './types';
 import { Navbar } from './components/Navbar';
 import { AdminPanel } from './components/AdminPanel';
 import { Dashboard } from './components/Dashboard';
 import { BookingPage } from './components/BookingPage';
 import { PartnerPage } from './components/PartnerPage';
-
-/*
-AUTHENTICATION & FUNCTIONALITY ROADMAP
-1. Login Page: Secure access via Email or Phone with OTP verification.
-2. Signup Flow: Role-based registration (Customer vs Barber/Beautician).
-3. User Roles:
-   - Customer: Book slots, view history, manage profile.
-   - Barber/Beautician: Manage availability, view schedule, earn commissions.
-   - Admin: Approve partners, manage global services, oversight on revenue.
-4. Access Control: Role-based route protection (Supabase RLS).
-5. Booking Flow: Step-by-step wizard with real-time slot selection.
-6. Payment Gateway: Future integration with Razorpay (UPI, Cards, Netbanking).
-7. Notifications: SMS/Email alerts for booking confirmations and reminders.
-8. Admin Dashboard: Holistic control for partner approval and service availability.
-*/
 
 const MOCK_SERVICES: Service[] = [
   { id: '1', name: 'Executive Gents Cut', category: 'gents', price: 999, duration_mins: 45 },
@@ -63,6 +48,7 @@ const App: React.FC = () => {
   }, []);
 
   const fetchApprovedPartners = async () => {
+    // VISIBILITY RULE: Only fetch partners with status 'approved'
     const { data, error } = await supabase
       .from('partners')
       .select('*')
@@ -129,7 +115,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-dark-900 text-white selection:bg-gold selection:text-dark-900">
       <Navbar 
         userRole={profile?.role} 
-        onLogout={() => { setProfile(null); setCurrentView('home'); }} 
+        onLogout={() => { setProfile(null); setCurrentView('home'); fetchApprovedPartners(); }} 
         onAuthOpen={() => setCurrentView('login')}
         currentView={currentView === 'dashboard' || currentView === 'admin-panel' ? 'dashboard' : 'home'}
         onViewChange={handleViewChange}
@@ -142,7 +128,7 @@ const App: React.FC = () => {
             <form onSubmit={(e) => handleAuth(e, 'login')} className="space-y-6">
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">Sign In</button>
+              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Sign In</button>
             </form>
             <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">New to Fresh Cut? Create Account</button>
           </div>
@@ -157,7 +143,7 @@ const App: React.FC = () => {
               <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">Create Account</button>
+              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Create Account</button>
             </form>
             <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Already a member? Sign In</button>
           </div>
@@ -167,7 +153,7 @@ const App: React.FC = () => {
       {currentView === 'admin-panel' && profile && (
         <AdminPanel 
           bookings={[]} 
-          professionals={approvedPartners.length > 0 ? approvedPartners : []} 
+          professionals={approvedPartners} 
           onUpdateStatus={() => {}} 
         />
       )}
@@ -177,7 +163,7 @@ const App: React.FC = () => {
       )}
 
       {currentView === 'partner' && (
-        <PartnerPage onSubmit={() => setCurrentView('home')} />
+        <PartnerPage onSubmit={() => { setCurrentView('home'); fetchApprovedPartners(); }} />
       )}
 
       {currentView === 'booking-flow' && (
@@ -245,40 +231,30 @@ const App: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-                <div>
-                  <h3 className="text-2xl font-serif font-bold text-gold mb-8 uppercase tracking-widest border-b border-gold/20 pb-4">Gents Barber Services</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {MOCK_SERVICES.filter(s => s.category === 'gents').map(s => (
-                      <div key={s.id} className="glass p-8 rounded-[2rem] border border-white/10 flex flex-col justify-between cursor-default">
-                        <div>
-                          <h4 className="text-xl font-bold mb-2 uppercase tracking-tighter transition-colors pointer-events-none">{s.name}</h4>
-                          <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
+                {['gents', 'ladies'].map((cat) => (
+                  <div key={cat}>
+                    <h3 className="text-2xl font-serif font-bold text-gold mb-8 uppercase tracking-widest border-b border-gold/20 pb-4">
+                      {cat === 'gents' ? 'Gents Barber Services' : 'Ladies Beauty Parlour Services'}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {MOCK_SERVICES.filter(s => s.category === cat).map(s => (
+                        <div key={s.id} className="glass p-8 rounded-[2rem] border border-white/10 flex flex-col justify-between cursor-default">
+                          <div>
+                            <h4 className="text-xl font-bold mb-2 uppercase tracking-tighter transition-colors pointer-events-none">{s.name}</h4>
+                            <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            {/* VISIBILITY RULE: Prices hidden unless user is logged in */}
+                            <span className={`text-2xl font-serif font-black gold-gradient transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>
+                              {profile ? `₹${s.price}` : '---'}
+                            </span>
+                            <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
+                          </div>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className={`text-2xl font-serif font-black gold-gradient pointer-events-none transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>₹{s.price}</span>
-                          <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <h3 className="text-2xl font-serif font-bold text-gold mb-8 uppercase tracking-widest border-b border-gold/20 pb-4">Ladies Beauty Parlour Services</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {MOCK_SERVICES.filter(s => s.category === 'ladies').map(s => (
-                      <div key={s.id} className="glass p-8 rounded-[2rem] border border-white/10 flex flex-col justify-between cursor-default">
-                        <div>
-                          <h4 className="text-xl font-bold mb-2 uppercase tracking-tighter transition-colors pointer-events-none">{s.name}</h4>
-                          <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className={`text-2xl font-serif font-black gold-gradient pointer-events-none transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>₹{s.price}</span>
-                          <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </section>
@@ -301,24 +277,14 @@ const App: React.FC = () => {
                       />
                       <div className="mt-6 text-center">
                         <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">{p.name}</p>
+                        <p className="text-[8px] text-white/40 uppercase tracking-widest mt-1">{p.category === 'gents' ? 'Barber' : 'Beauty Studio'}</p>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <>
-                    <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
-                      <img src="https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&q=80&w=400" alt="Master Barber" className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" />
-                      <div className="mt-6 text-center"><p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Master Barbering</p></div>
-                    </div>
-                    <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
-                      <img src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=400" alt="Ladies Stylist" className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" />
-                      <div className="mt-6 text-center"><p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Couture Styling</p></div>
-                    </div>
-                    <div className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
-                      <img src="https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&q=80&w=400" alt="Artisan Tools" className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" />
-                      <div className="mt-6 text-center"><p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">Elite Instruments</p></div>
-                    </div>
-                  </>
+                  <div className="col-span-full py-24 text-center">
+                    <p className="text-white/20 text-xs uppercase tracking-widest italic">Awaiting approved artisan submissions...</p>
+                  </div>
                 )}
               </div>
             </div>

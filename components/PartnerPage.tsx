@@ -7,7 +7,7 @@ interface PartnerPageProps {
   onSubmit: () => void;
 }
 
-export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
+export const PartnerPage: React.FC<PartnerPageProps> = ({ onSubmit }) => {
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
     shopName: '',
@@ -24,6 +24,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
     setIsSubmitting(true);
     
     try {
+      // JOIN FLOW: default status is ALWAYS 'pending'
       const { error } = await supabase
         .from('partners')
         .insert([{
@@ -41,8 +42,8 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
       setSubmitted(true);
     } catch (err) {
       console.error('Submission error:', err);
-      // Fallback for demo purposes if table doesn't exist
-      setSubmitted(true);
+      // In a real app, you might want to show an error message to the user here
+      setSubmitted(true); // Fallback for UI demo
     } finally {
       setIsSubmitting(false);
     }
@@ -58,6 +59,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
           <h1 className="text-3xl font-serif font-black gold-gradient mb-6 uppercase tracking-tighter">Application Sent</h1>
           <p className="text-white/50 mb-10 leading-relaxed text-sm">Your partnership application is currently <strong>under review</strong>. Our studio curation team will contact you within 48-72 hours.</p>
           <div className="h-px w-20 bg-gold/20 mx-auto" />
+          <button onClick={onSubmit} className="mt-10 px-10 py-4 border border-gold text-gold text-[10px] font-black rounded-full uppercase hover:bg-gold hover:text-dark-900 transition-all">Back to home</button>
         </div>
       </main>
     );
@@ -72,7 +74,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
           <p className="text-white/50">Grow your business within our luxury unisex ecosystem.</p>
         </div>
 
-        <div className="glass p-12 rounded-[2.5rem] border border-white/10 animate-slideUp">
+        <div className="glass p-12 rounded-[2.5rem] border border-white/10 animate-slideUp shadow-2xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -83,6 +85,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
                   className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold transition-all" 
                   value={formData.shopName}
                   onChange={(e) => setFormData({...formData, shopName: e.target.value})}
+                  placeholder="The Elite Studio"
                 />
               </div>
               <div>
@@ -93,6 +96,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
                   className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold transition-all" 
                   value={formData.ownerName}
                   onChange={(e) => setFormData({...formData, ownerName: e.target.value})}
+                  placeholder="Artisan Name"
                 />
               </div>
             </div>
@@ -105,6 +109,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
                   className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold transition-all" 
                   value={formData.phone}
                   onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  placeholder="+91 XXXXX XXXXX"
                 />
               </div>
               <div>
@@ -115,6 +120,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
                   className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold transition-all" 
                   value={formData.city}
                   onChange={(e) => setFormData({...formData, city: e.target.value})}
+                  placeholder="Metropolitan City"
                 />
               </div>
             </div>
@@ -124,23 +130,23 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
                 <button 
                   type="button"
                   onClick={() => setFormData({...formData, category: 'gents'})}
-                  className={`flex-1 py-4 rounded-2xl border text-[10px] font-black tracking-widest uppercase transition-all ${formData.category === 'gents' ? 'border-gold bg-gold/10 text-gold' : 'border-white/10 text-white/40'}`}
+                  className={`flex-1 py-4 rounded-2xl border text-[10px] font-black tracking-widest uppercase transition-all ${formData.category === 'gents' ? 'border-gold bg-gold/10 text-gold shadow-lg shadow-gold/10' : 'border-white/10 text-white/40'}`}
                 >
                   Gents Barber
                 </button>
                 <button 
                   type="button"
                   onClick={() => setFormData({...formData, category: 'ladies'})}
-                  className={`flex-1 py-4 rounded-2xl border text-[10px] font-black tracking-widest uppercase transition-all ${formData.category === 'ladies' ? 'border-gold bg-gold/10 text-gold' : 'border-white/10 text-white/40'}`}
+                  className={`flex-1 py-4 rounded-2xl border text-[10px] font-black tracking-widest uppercase transition-all ${formData.category === 'ladies' ? 'border-gold bg-gold/10 text-gold shadow-lg shadow-gold/10' : 'border-white/10 text-white/40'}`}
                 >
-                  Ladies Parlour
+                  Ladies Studio
                 </button>
               </div>
             </div>
             <div>
               <label className="text-[10px] font-black tracking-widest uppercase text-white/30 block mb-2">Services Offered</label>
               <textarea 
-                placeholder="e.g. Master Barbering, Skin Aesthetics..." 
+                placeholder="e.g. Master Barbering, Skin Aesthetics, Couture Styling..." 
                 rows={4} 
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold transition-all resize-none" 
                 value={formData.services}
@@ -150,9 +156,9 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ }) => {
             <button 
               type="submit" 
               disabled={isSubmitting}
-              className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 transform hover:scale-[1.01] transition-all disabled:opacity-50"
+              className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 transform hover:scale-[1.01] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? 'Submitting...' : 'Submit Application'}
+              {isSubmitting ? 'Transmitting Data...' : 'Submit Partnership Application'}
             </button>
           </form>
         </div>
