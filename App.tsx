@@ -48,7 +48,8 @@ const App: React.FC = () => {
   }, []);
 
   const fetchApprovedPartners = async () => {
-    // VISIBILITY RULE: Only fetch partners with status 'approved'
+    // MARKETPLACE RULE: Only fetch partners with status 'approved'
+    // Providers must be online for real-time matching
     const { data, error } = await supabase
       .from('partners')
       .select('*')
@@ -63,7 +64,9 @@ const App: React.FC = () => {
           ? 'https://images.unsplash.com/photo-1605497746444-ac961d1349a2?auto=format&fit=crop&q=80'
           : 'https://images.unsplash.com/photo-1595152772835-219674b2a8a6?auto=format&fit=crop&q=80',
         specialties: p.services.split(','),
-        category: p.category
+        category: p.category,
+        is_online: p.is_online ?? true, // Default to true if not specified
+        location_city: p.city
       }));
       setApprovedPartners(mappedPartners);
     }
@@ -72,7 +75,7 @@ const App: React.FC = () => {
   const logActivity = async (type: string, message: string, refId: string = '') => {
     try {
       await supabase.from('notifications').insert([{
-        type, message, reference_id: refId, is_read: false
+        type, message, reference_id: refId, is_read: false, created_at: new Date().toISOString()
       }]);
     } catch (e) {
       console.warn('Logging error:', e);
@@ -81,34 +84,59 @@ const App: React.FC = () => {
 
   const handleAuth = async (e: React.FormEvent, type: 'login' | 'signup') => {
     e.preventDefault();
+    // Pre-defined admin credentials
     const isAdmin = email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@';
     
-    const newProfile = {
+    // In a real marketplace, we would fetch role from DB
+    // For now, we simulate role based on email if needed
+    const isProfessional = email.includes('barber') || email.includes('parlour');
+
+    const newProfile: Profile = {
       id: isAdmin ? 'admin-001' : 'user-' + Date.now(),
-      full_name: fullName || (isAdmin ? 'Chief Admin' : 'Valued Client'),
+      full_name: fullName || (isAdmin ? 'Chief Admin' : isProfessional ? 'Professional Partner' : 'Valued Client'),
       email: email,
-      role: (isAdmin ? 'admin' : 'customer') as UserRole
+      role: (isAdmin ? 'admin' : isProfessional ? 'professional' : 'customer') as UserRole
     };
 
     setProfile(newProfile);
     
-    // Log user activity for admin panel
     if (type === 'signup') {
-      logActivity('user_signup', `New user joined the studio: ${newProfile.full_name}`, newProfile.id);
+      logActivity('user_signup', `Marketplace signup: ${newProfile.full_name} (${newProfile.role})`, newProfile.id);
     } else {
-      logActivity('user_login', `${newProfile.full_name} session initiated`, newProfile.id);
+      logActivity('user_login', `${newProfile.role.toUpperCase()} logged in: ${newProfile.full_name}`, newProfile.id);
     }
     
     setCurrentView(isAdmin ? 'admin-panel' : 'dashboard');
   };
 
-  const handleBookingComplete = async (data: any) => {
+  const handleBookingComplete = async (bookingData: any) => {
     if (!profile) {
       setCurrentView('login');
-    } else {
-      // Create activity log for booking
-      logActivity('booking_created', `New grooming reservation by ${profile.full_name}`, 'booking-' + Date.now());
+      return;
+    }
+
+    try {
+      // UBER-STYLE: Create booking with 'searching' status
+      const bookingId = 'bk-' + Date.now();
+      
+      const { error } = await supabase.from('bookings').insert([{
+        id: bookingId,
+        customer_id: profile.id,
+        professional_id: bookingData.professionalId,
+        service_id: bookingData.serviceId,
+        appointment_time: `${bookingData.date}T${bookingData.time}:00Z`,
+        status: 'searching',
+        created_at: new Date().toISOString()
+      }]);
+
+      if (error) throw error;
+
+      await logActivity('booking_searching', `Marketplace matching initiated for ${profile.full_name}`, bookingId);
+      
       setCurrentView('payment-mockup');
+    } catch (err) {
+      console.error('Booking creation failed:', err);
+      setCurrentView('dashboard');
     }
   };
 
@@ -127,7 +155,7 @@ const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-dark-900 flex items-center justify-center">
-        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse">Initializing Studio...</h1>
+        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse">Initializing Marketplace...</h1>
       </div>
     );
   }
@@ -145,13 +173,13 @@ const App: React.FC = () => {
       {currentView === 'login' && (
         <div className="min-h-screen pt-32 flex items-center justify-center p-4">
           <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Welcome Back</h2>
+            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Marketplace Login</h2>
             <form onSubmit={(e) => handleAuth(e, 'login')} className="space-y-6">
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
               <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Sign In</button>
             </form>
-            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">New to Fresh Cut? Create Account</button>
+            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">New Partner or Customer? Register</button>
           </div>
         </div>
       )}
@@ -159,14 +187,14 @@ const App: React.FC = () => {
       {currentView === 'signup' && (
         <div className="min-h-screen pt-32 flex items-center justify-center p-4">
           <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Join The Studio</h2>
+            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Marketplace Join</h2>
             <form onSubmit={(e) => handleAuth(e, 'signup')} className="space-y-6">
               <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Create Account</button>
+              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Join Marketplace</button>
             </form>
-            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Already a member? Sign In</button>
+            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Existing Member? Sign In</button>
           </div>
         </div>
       )}
@@ -190,7 +218,7 @@ const App: React.FC = () => {
       {currentView === 'booking-flow' && (
         <BookingPage 
           type="gents" 
-          professionals={approvedPartners} 
+          professionals={approvedPartners.filter(p => p.is_online)} 
           services={MOCK_SERVICES} 
           onSubmit={handleBookingComplete}
           onBack={() => setCurrentView('home')}
@@ -200,24 +228,25 @@ const App: React.FC = () => {
       {currentView === 'payment-mockup' && profile && (
         <div className="min-h-screen pt-32 pb-20 px-4 flex justify-center">
           <div className="max-w-2xl w-full animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black gold-gradient mb-12 text-center uppercase">Secure Checkout</h2>
+            <h2 className="text-4xl font-serif font-black gold-gradient mb-12 text-center uppercase">Matching Confirmed</h2>
             <div className="glass rounded-[2.5rem] p-12 border border-gold/30">
               <div className="mb-8 border-b border-white/10 pb-8">
-                <h3 className="text-sm font-black tracking-widest uppercase text-white/40 mb-4">Summary</h3>
+                <h3 className="text-sm font-black tracking-widest uppercase text-white/40 mb-4">Marketplace Summary</h3>
                 <div className="flex justify-between items-center mb-2">
-                  <span>Elite Grooming Session</span>
+                  <span>Elite Matching Service</span>
                   <span className="font-serif font-bold text-gold">₹999</span>
                 </div>
                 <div className="flex justify-between items-center mb-2">
-                  <span>Studio Fee</span>
+                  <span>Platform Commission</span>
                   <span className="font-serif font-bold text-gold">₹49</span>
                 </div>
                 <div className="flex justify-between items-center text-xl font-bold mt-4">
-                  <span>Total Amount</span>
+                  <span>Total Payable</span>
                   <span className="gold-gradient">₹1,048</span>
                 </div>
               </div>
-              <button onClick={() => handleViewChange('dashboard')} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase transform hover:scale-[1.02] transition-all">Confirm & Pay</button>
+              <p className="text-white/40 text-[10px] uppercase tracking-widest text-center mb-8">Once payment is confirmed, the provider will receive your request.</p>
+              <button onClick={() => handleViewChange('dashboard')} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase transform hover:scale-[1.02] transition-all">Confirm Payment</button>
             </div>
           </div>
         </div>
@@ -233,12 +262,12 @@ const App: React.FC = () => {
               <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-dark-900" />
             </div>
             <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
-              <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Established 1994 &bull; Luxury Grooming</span>
-              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Timeless.<br/><span className="gold-gradient italic">Artistry.</span></h1>
-              <p className="text-lg md:text-xl text-white/70 mb-12 max-w-2xl mx-auto leading-relaxed">The ultimate unisex destination for elite grooming. From Gents Master Barbering to Ladies Premium Beauty Treatments.</p>
+              <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Marketplace Active &bull; Uber for Grooming</span>
+              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Global.<br/><span className="gold-gradient italic">Artisans.</span></h1>
+              <p className="text-lg md:text-xl text-white/70 mb-12 max-w-2xl mx-auto leading-relaxed">The ultimate decentralized platform for elite grooming. Real-time matching with Gents Master Barbers & Ladies Premium Stylists.</p>
               <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
-                <button onClick={() => setCurrentView('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">RESERVE SLOT</button>
-                <button onClick={() => { document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' }); }} className="w-full sm:w-auto px-12 py-5 border border-white/20 hover:border-gold rounded-full text-xs font-black tracking-widest transition-all hover:text-gold uppercase text-center">VIEW SERVICES</button>
+                <button onClick={() => setCurrentView('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">FIND PROVIDER</button>
+                <button onClick={() => { document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' }); }} className="w-full sm:w-auto px-12 py-5 border border-white/20 hover:border-gold rounded-full text-xs font-black tracking-widest transition-all hover:text-gold uppercase text-center">SERVICES LIST</button>
               </div>
             </div>
           </section>
@@ -246,8 +275,8 @@ const App: React.FC = () => {
           <section id="services" className="py-32 bg-dark-800 relative overflow-hidden">
             <div className="max-w-7xl mx-auto px-4 relative z-10">
               <div className="text-center mb-20">
-                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Signature Collections</span>
-                <h2 className="text-5xl font-serif font-bold mb-4 uppercase tracking-tight">Services & Styling</h2>
+                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Demand Categories</span>
+                <h2 className="text-5xl font-serif font-bold mb-4 uppercase tracking-tight">Available Styling</h2>
                 <div className="h-1 w-20 bg-gold mx-auto rounded-full" />
               </div>
 
@@ -255,21 +284,21 @@ const App: React.FC = () => {
                 {['gents', 'ladies'].map((cat) => (
                   <div key={cat}>
                     <h3 className="text-2xl font-serif font-bold text-gold mb-8 uppercase tracking-widest border-b border-gold/20 pb-4">
-                      {cat === 'gents' ? 'Gents Barber Services' : 'Ladies Beauty Parlour Services'}
+                      {cat === 'gents' ? 'Gents Portfolio' : 'Ladies Portfolio'}
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {MOCK_SERVICES.filter(s => s.category === cat).map(s => (
-                        <div key={s.id} className="glass p-8 rounded-[2rem] border border-white/10 flex flex-col justify-between cursor-default">
+                        <div key={s.id} className="glass p-8 rounded-[2rem] border border-white/10 flex flex-col justify-between cursor-default group">
                           <div>
-                            <h4 className="text-xl font-bold mb-2 uppercase tracking-tighter transition-colors pointer-events-none">{s.name}</h4>
-                            <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6 pointer-events-none">{s.duration_mins} MIN SESSION</p>
+                            <h4 className="text-xl font-bold mb-2 uppercase tracking-tighter transition-colors group-hover:text-gold">{s.name}</h4>
+                            <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6">{s.duration_mins} MIN SESSION</p>
                           </div>
                           <div className="flex justify-between items-center">
-                            {/* VISIBILITY RULE: Prices hidden unless user is logged in */}
-                            <span className={`text-2xl font-serif font-black gold-gradient transition-opacity duration-300 ${!profile ? 'invisible' : 'visible'}`}>
-                              {profile ? `₹${s.price}` : '---'}
+                            {/* MARKETPLACE RULE: Prices hidden until login */}
+                            <span className={`text-2xl font-serif font-black gold-gradient transition-opacity duration-300 ${!profile ? 'invisible opacity-0' : 'visible opacity-100'}`}>
+                              {profile ? `₹${s.price}` : ''}
                             </span>
-                            <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve Slot</button>
+                            <button onClick={() => setCurrentView('booking-flow')} className="text-[9px] font-black text-white/40 hover:text-gold uppercase tracking-widest">Reserve</button>
                           </div>
                         </div>
                       ))}
@@ -283,28 +312,36 @@ const App: React.FC = () => {
           <section className="pb-32 bg-dark-800">
             <div className="max-w-7xl mx-auto px-4">
               <div className="text-center mb-16">
-                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Artisan Excellence</span>
-                <h3 className="text-3xl font-serif font-bold uppercase tracking-tight">Showcase</h3>
+                <span className="text-gold text-[10px] font-black tracking-[0.5em] uppercase mb-4 block">Supply Showcase</span>
+                <h3 className="text-3xl font-serif font-bold uppercase tracking-tight">Active Artisans</h3>
                 <div className="h-px w-12 bg-gold/30 mx-auto mt-4" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 {approvedPartners.length > 0 ? (
                   approvedPartners.slice(0, 3).map(p => (
                     <div key={p.id} className="glass p-4 rounded-[2rem] border border-white/10 overflow-hidden transform hover:scale-[1.02] transition-all">
-                      <img 
-                        src={p.image_url} 
-                        alt={p.name} 
-                        className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" 
-                      />
+                      <div className="relative">
+                        <img 
+                          src={p.image_url} 
+                          alt={p.name} 
+                          className="w-full aspect-[4/5] object-cover rounded-2xl grayscale hover:grayscale-0 transition-all duration-700" 
+                        />
+                        {p.is_online && (
+                          <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/60 px-3 py-1.5 rounded-full border border-gold/30 backdrop-blur-sm">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                            <span className="text-[8px] font-black uppercase tracking-widest">Online</span>
+                          </div>
+                        )}
+                      </div>
                       <div className="mt-6 text-center">
                         <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gold">{p.name}</p>
-                        <p className="text-[8px] text-white/40 uppercase tracking-widest mt-1">{p.category === 'gents' ? 'Barber' : 'Beauty Studio'}</p>
+                        <p className="text-[8px] text-white/40 uppercase tracking-widest mt-1">{p.location_city || 'Central Studio'}</p>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="col-span-full py-24 text-center">
-                    <p className="text-white/20 text-xs uppercase tracking-widest italic">Awaiting approved artisan submissions...</p>
+                    <p className="text-white/20 text-xs uppercase tracking-widest italic">Scanning for artisan supply signals...</p>
                   </div>
                 )}
               </div>
@@ -320,9 +357,9 @@ const App: React.FC = () => {
             <button onClick={() => handleViewChange('home')} className="hover:text-gold transition-all">Home</button>
             <button onClick={() => { handleViewChange('home'); setTimeout(() => document.getElementById('services')?.scrollIntoView({behavior:'smooth'}), 100); }} className="hover:text-gold transition-all">Services</button>
             <button onClick={() => handleViewChange('dashboard')} className="hover:text-gold transition-all">Dashboard</button>
-            <button onClick={() => handleViewChange('partner')} className="hover:text-gold transition-all">Partner With Us</button>
+            <button onClick={() => handleViewChange('partner')} className="hover:text-gold transition-all">Partner Network</button>
           </div>
-          <p className="text-white/20 text-[10px] tracking-[0.4em] uppercase">&copy; 2024 Fresh Cut Studio. Luxury Grooming Experience.</p>
+          <p className="text-white/20 text-[10px] tracking-[0.4em] uppercase">&copy; 2024 Fresh Cut Studio. Luxury Grooming Marketplace.</p>
         </div>
       </footer>
     </div>

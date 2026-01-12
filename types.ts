@@ -18,6 +18,9 @@ export interface Professional {
   image_url: string;
   specialties: string[];
   category: Category;
+  is_online: boolean; // Uber-style online/offline status
+  location_city?: string;
+  rating?: number;
 }
 
 export interface Service {
@@ -28,7 +31,8 @@ export interface Service {
   category: Category;
 }
 
-export type BookingStatus = 'pending' | 'accepted' | 'completed' | 'rejected' | 'cancelled';
+// Uber-style granular statuses
+export type BookingStatus = 'searching' | 'accepted' | 'in-progress' | 'completed' | 'rejected' | 'cancelled';
 
 export interface Booking {
   id: string;
@@ -38,6 +42,7 @@ export interface Booking {
   appointment_time: string;
   status: BookingStatus;
   notes?: string;
+  created_at: string;
   // Joined fields
   professional?: Professional;
   service?: Service;
@@ -53,5 +58,14 @@ export interface PartnerRequest {
   services: string;
   category: Category;
   status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+}
+
+export interface ActivityNotification {
+  id: string;
+  type: string;
+  message: string;
+  reference_id: string;
+  is_read: boolean;
   created_at: string;
 }
