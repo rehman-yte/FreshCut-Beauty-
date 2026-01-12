@@ -69,24 +69,45 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAuth = (e: React.FormEvent, type: 'login' | 'signup') => {
+  const logActivity = async (type: string, message: string, refId: string = '') => {
+    try {
+      await supabase.from('notifications').insert([{
+        type, message, reference_id: refId, is_read: false
+      }]);
+    } catch (e) {
+      console.warn('Logging error:', e);
+    }
+  };
+
+  const handleAuth = async (e: React.FormEvent, type: 'login' | 'signup') => {
     e.preventDefault();
     const isAdmin = email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@';
     
-    setProfile({
+    const newProfile = {
       id: isAdmin ? 'admin-001' : 'user-' + Date.now(),
       full_name: fullName || (isAdmin ? 'Chief Admin' : 'Valued Client'),
       email: email,
-      role: isAdmin ? 'admin' : 'customer'
-    });
+      role: (isAdmin ? 'admin' : 'customer') as UserRole
+    };
+
+    setProfile(newProfile);
+    
+    // Log user activity for admin panel
+    if (type === 'signup') {
+      logActivity('user_signup', `New user joined the studio: ${newProfile.full_name}`, newProfile.id);
+    } else {
+      logActivity('user_login', `${newProfile.full_name} session initiated`, newProfile.id);
+    }
     
     setCurrentView(isAdmin ? 'admin-panel' : 'dashboard');
   };
 
-  const handleBookingComplete = (data: any) => {
+  const handleBookingComplete = async (data: any) => {
     if (!profile) {
       setCurrentView('login');
     } else {
+      // Create activity log for booking
+      logActivity('booking_created', `New grooming reservation by ${profile.full_name}`, 'booking-' + Date.now());
       setCurrentView('payment-mockup');
     }
   };

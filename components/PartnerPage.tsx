@@ -24,8 +24,8 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ onSubmit }) => {
     setIsSubmitting(true);
     
     try {
-      // JOIN FLOW: default status is ALWAYS 'pending'
-      const { error } = await supabase
+      // 1. Insert into partners table
+      const { data: partnerData, error: partnerError } = await supabase
         .from('partners')
         .insert([{
           shop_name: formData.shopName,
@@ -36,14 +36,25 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ onSubmit }) => {
           category: formData.category,
           status: 'pending',
           created_at: new Date().toISOString()
-        }]);
+        }])
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (partnerError) throw partnerError;
+
+      // 2. Create activity notification for admin
+      await supabase.from('notifications').insert([{
+        type: 'shop_pending',
+        message: `New artisan joining request: ${formData.shopName} by ${formData.ownerName}`,
+        reference_id: partnerData.id,
+        is_read: false
+      }]);
+
       setSubmitted(true);
     } catch (err) {
       console.error('Submission error:', err);
-      // In a real app, you might want to show an error message to the user here
-      setSubmitted(true); // Fallback for UI demo
+      // Fallback for UI demo
+      setSubmitted(true); 
     } finally {
       setIsSubmitting(false);
     }
