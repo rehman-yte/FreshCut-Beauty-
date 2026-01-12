@@ -1,0 +1,5 @@
+{
+  "name": "Fresh Cut Barber Booking",
+  "description": "A premium barber booking platform with role-based access for customers, barbers, and administrators, powered by Supabase.",
+  "requestFramePermissions": []
+}
