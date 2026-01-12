@@ -43,3 +43,15 @@ export interface Booking {
   service?: Service;
   customer?: Profile;
 }
+
+export interface PartnerRequest {
+  id: string;
+  shop_name: string;
+  owner_name: string;
+  phone: string;
+  city: string;
+  services: string;
+  category: Category;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+}
