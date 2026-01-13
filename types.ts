@@ -6,9 +6,16 @@ export interface Profile {
   id: string;
   full_name: string;
   role: UserRole;
-  avatar_url?: string;
   email: string;
-  is_partner_approved?: boolean;
+  mobile?: string;
+  avatar_url?: string;
+  status: 'active' | 'suspended' | 'pending';
+  otp_verified: boolean;
+  email_verified: boolean;
+  pan_verified: boolean;
+  pan_number?: string;
+  pan_url?: string;
+  shop_image_url?: string;
 }
 
 export interface Professional {
@@ -18,9 +25,11 @@ export interface Professional {
   image_url: string;
   specialties: string[];
   category: Category;
-  is_online: boolean; // Uber-style online/offline status
+  is_online: boolean; 
+  status: 'pending' | 'approved' | 'rejected';
   location_city?: string;
-  rating?: number;
+  trust_score: number;
+  owner_id: string;
 }
 
 export interface Service {
@@ -31,39 +40,26 @@ export interface Service {
   category: Category;
 }
 
-// Uber-style granular statuses
 export type BookingStatus = 'searching' | 'accepted' | 'in-progress' | 'completed' | 'rejected' | 'cancelled';
 
 export interface Booking {
   id: string;
   customer_id: string;
-  professional_id: string;
+  professional_id: string | null;
   service_id: string;
   appointment_time: string;
   status: BookingStatus;
   notes?: string;
   created_at: string;
-  // Joined fields
   professional?: Professional;
   service?: Service;
   customer?: Profile;
 }
 
-export interface PartnerRequest {
-  id: string;
-  shop_name: string;
-  owner_name: string;
-  phone: string;
-  city: string;
-  services: string;
-  category: Category;
-  status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
-}
-
 export interface ActivityNotification {
   id: string;
   type: string;
+  actor_role: UserRole;
   message: string;
   reference_id: string;
   is_read: boolean;

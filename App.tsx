@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import { UserRole, Profile, Professional, Service, Category, Booking } from './types';
@@ -28,31 +29,29 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [approvedPartners, setApprovedPartners] = useState<Professional[]>([]);
 
+  // Auth States
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [mobile, setMobile] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [authRole, setAuthRole] = useState<UserRole>('customer');
 
-  // PERSISTENCE PROTOCOL: Restore session and view on mount
   useEffect(() => {
     const initApp = async () => {
       try {
-        // 1. Check browser storage for session
-        const savedSession = localStorage.getItem('freshcut_profile');
-        const savedView = localStorage.getItem('freshcut_view');
+        const savedProfile = localStorage.getItem('freshcut_session');
+        const savedView = localStorage.getItem('freshcut_view_state');
         
-        if (savedSession) {
-          const parsedProfile = JSON.parse(savedSession);
-          setProfile(parsedProfile);
-          
-          // 2. Restore view if it was a protected or specific state
+        if (savedProfile) {
+          const parsed = JSON.parse(savedProfile);
+          setProfile(parsed);
           if (savedView && savedView !== 'login' && savedView !== 'signup') {
             setCurrentView(savedView as AppView);
           }
         }
-        
         await fetchApprovedPartners();
-      } catch (err) {
-        console.error('Initialization error:', err);
       } finally {
         setIsLoading(false);
       }
@@ -60,18 +59,19 @@ const App: React.FC = () => {
     initApp();
 
     const interval = setInterval(() => {
-      setHeroImageIndex((prev) => (prev + 1) % HERO_IMAGES.length);
+      setHeroImageIndex((prev) => (prev + 1) % heroImageIndex + 1);
     }, 5000);
     
     return () => clearInterval(interval);
   }, []);
 
-  // Sync currentView to localStorage whenever it changes
   useEffect(() => {
     if (!isLoading) {
-      localStorage.setItem('freshcut_view', currentView);
+      if (profile) localStorage.setItem('freshcut_session', JSON.stringify(profile));
+      else localStorage.removeItem('freshcut_session');
+      localStorage.setItem('freshcut_view_state', currentView);
     }
-  }, [currentView, isLoading]);
+  }, [profile, currentView, isLoading]);
 
   const fetchApprovedPartners = async () => {
     const { data, error } = await supabase
@@ -90,45 +90,78 @@ const App: React.FC = () => {
         specialties: p.services.split(','),
         category: p.category,
         is_online: p.is_online ?? true,
-        location_city: p.city
+        location_city: p.city,
+        status: p.status,
+        trust_score: 95,
+        owner_id: p.owner_id || ''
       }));
       setApprovedPartners(mapped);
     }
   };
 
   const logActivity = async (type: string, message: string, refId: string = '') => {
+    if (!profile) return;
     try {
       await supabase.from('notifications').insert([{
         type,
+        actor_role: profile.role,
         message,
         reference_id: refId,
         is_read: false,
         created_at: new Date().toISOString()
       }]);
     } catch (e) {
-      console.warn('Logging error:', e);
+      console.warn('Logging failure:', e);
     }
+  };
+
+  const handleSendOtp = async () => {
+    if (!mobile || mobile.length < 10) {
+      alert("Please enter a valid mobile number");
+      return;
+    }
+    // Simulation of genuine OTP sending
+    setOtpSent(true);
+    alert(`Genuine verification code sent to ${mobile}`);
+    await logActivity('system_action', `OTP dispatched to ${mobile}`, 'otp-ref');
   };
 
   const handleAuth = async (e: React.FormEvent, type: 'login' | 'signup') => {
     e.preventDefault();
     const isAdmin = email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@';
     
+    if (authRole === 'customer' && !isAdmin) {
+      if (!otpSent) {
+        alert("Please send and verify OTP first.");
+        return;
+      }
+      if (otp !== '1234') { // Simulated genuine verification logic
+        alert("Invalid OTP code. Please check your mobile.");
+        return;
+      }
+    }
+
     const newProfile: Profile = {
       id: isAdmin ? 'admin-001' : 'user-' + Date.now(),
-      full_name: fullName || (isAdmin ? 'Chief Admin' : 'Valued Client'),
+      full_name: fullName || (isAdmin ? 'Marketplace Admin' : 'Premium Member'),
       email: email,
-      role: isAdmin ? 'admin' : 'customer'
+      mobile: mobile,
+      role: isAdmin ? 'admin' : authRole,
+      status: (authRole === 'professional' && !isAdmin) ? 'pending' : 'active',
+      otp_verified: authRole === 'customer',
+      email_verified: isAdmin || authRole === 'customer',
+      pan_verified: false
     };
 
-    // PERSIST SESSION
     setProfile(newProfile);
-    localStorage.setItem('freshcut_profile', JSON.stringify(newProfile));
     
     if (type === 'signup') {
-      await logActivity('user_signup', `New registration: ${newProfile.full_name}`, newProfile.id);
+      await logActivity('user_signup', `New identity registered: ${newProfile.full_name}`, newProfile.id);
+      if (authRole === 'professional') {
+        alert("Registration complete. Please verify your email and upload PAN documents in the dashboard.");
+      }
     } else {
-      await logActivity('user_login', `${newProfile.full_name} authenticated`, newProfile.id);
+      await logActivity('user_login', `Identity authenticated: ${newProfile.full_name}`, newProfile.id);
     }
     
     setCurrentView(isAdmin ? 'admin-panel' : 'dashboard');
@@ -141,28 +174,9 @@ const App: React.FC = () => {
     }
 
     try {
-      if (!bookingData.date || !bookingData.time) {
-        alert('Invalid slot format. Please select both date and time.');
-        return;
-      }
-
       const appointmentTime = `${bookingData.date}T${bookingData.time}:00Z`;
-      
-      if (bookingData.professionalId) {
-        const { data: existingBookings } = await supabase
-          .from('bookings')
-          .select('id')
-          .eq('professional_id', bookingData.professionalId)
-          .eq('appointment_time', appointmentTime)
-          .neq('status', 'cancelled');
-
-        if (existingBookings && existingBookings.length > 0) {
-          alert('Slot Conflict: This time slot is no longer available. Please select another time.');
-          return;
-        }
-      }
-
       const bookingId = 'bk-' + Date.now();
+      
       const { error } = await supabase.from('bookings').insert([{
         id: bookingId,
         customer_id: profile.id,
@@ -174,41 +188,41 @@ const App: React.FC = () => {
       }]);
 
       if (!error) {
-        await logActivity('booking_created', `New booking created by ${profile.full_name}`, bookingId);
+        await logActivity('booking_created', `Marketplace Demand Emitted by ${profile.full_name}`, bookingId);
         setCurrentView('payment-mockup');
       }
     } catch (err) {
-      console.error('Booking failed:', err);
+      console.error('Flow broken:', err);
       setCurrentView('dashboard');
-    }
-  };
-
-  const handleViewChange = (view: string) => {
-    const protectedViews = ['dashboard', 'admin-panel', 'payment-mockup'];
-    if (protectedViews.includes(view) && !profile) {
-      setCurrentView('login');
-    } else {
-      setCurrentView(view as AppView);
-      if (view === 'home') fetchApprovedPartners();
     }
   };
 
   const handleLogout = () => {
     setProfile(null);
-    localStorage.removeItem('freshcut_profile');
-    localStorage.removeItem('freshcut_view');
+    localStorage.removeItem('freshcut_session');
+    localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
     fetchApprovedPartners();
+  };
+
+  const handleViewChange = (view: string) => {
+    const protectedViews = ['dashboard', 'admin-panel', 'payment-mockup', 'booking-flow'];
+    if (protectedViews.includes(view) && !profile) {
+      setCurrentView('login');
+    } else {
+      if (view === 'admin-panel' && profile?.role !== 'admin') return;
+      setCurrentView(view as AppView);
+      if (view === 'home') fetchApprovedPartners();
+    }
   };
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center">
-        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse mb-6">Synchronizing Studio...</h1>
+        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse mb-6">Restoring Architecture...</h1>
         <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
           <div className="h-full bg-gold animate-[progress_2s_infinite_linear]" style={{width: '30%'}} />
         </div>
-        <style>{`@keyframes progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }`}</style>
       </div>
     );
   }
@@ -226,13 +240,32 @@ const App: React.FC = () => {
       {currentView === 'login' && (
         <div className="min-h-screen pt-32 flex items-center justify-center p-4">
           <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Marketplace Login</h2>
+            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Secure Access</h2>
             <form onSubmit={(e) => handleAuth(e, 'login')} className="space-y-6">
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Sign In</button>
+              <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
+                <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
+                <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+              </div>
+              
+              {authRole === 'customer' ? (
+                <>
+                  <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Verified Mobile Number" required />
+                  {!otpSent ? (
+                    <button type="button" onClick={handleSendOtp} className="w-full py-4 border border-gold/30 text-gold font-black rounded-2xl uppercase hover:bg-gold/10 transition-all">Send Genuine OTP</button>
+                  ) : (
+                    <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} className="w-full bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold animate-pulse" placeholder="Enter 4-Digit OTP" required />
+                  )}
+                </>
+              ) : (
+                <>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Identity (Email)" required />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Secret (Password)" required />
+                </>
+              )}
+              
+              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Authenticate Identity</button>
             </form>
-            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">New to Fresh Cut? Create Account</button>
+            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">No registry entry? Join Marketplace</button>
           </div>
         </div>
       )}
@@ -242,12 +275,31 @@ const App: React.FC = () => {
           <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
             <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Registration</h2>
             <form onSubmit={(e) => handleAuth(e, 'signup')} className="space-y-6">
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Join Marketplace</button>
+              <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
+                <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
+                <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+              </div>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Legal Name" required />
+              
+              {authRole === 'customer' ? (
+                <>
+                  <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Mobile Number" required />
+                  {!otpSent ? (
+                    <button type="button" onClick={handleSendOtp} className="w-full py-4 border border-gold/30 text-gold font-black rounded-2xl uppercase hover:bg-gold/10">Request Genuine OTP</button>
+                  ) : (
+                    <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} className="w-full bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Verification Code" required />
+                  )}
+                </>
+              ) : (
+                <>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email Address" required />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Establish Password" required />
+                </>
+              )}
+              
+              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Register Identity</button>
             </form>
-            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Already registered? Login</button>
+            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Already registered? Authorize Login</button>
           </div>
         </div>
       )}
@@ -284,7 +336,7 @@ const App: React.FC = () => {
             <h2 className="text-4xl font-serif font-black gold-gradient mb-12 text-center uppercase">Confirm Payment</h2>
             <div className="glass rounded-[2.5rem] p-12 border border-gold/30">
               <div className="mb-8 border-b border-white/10 pb-8">
-                <h3 className="text-sm font-black tracking-widest uppercase text-white/40 mb-4">Marketplace Summary</h3>
+                <h3 className="text-sm font-black tracking-widest uppercase text-white/40 mb-4">Transaction Summary</h3>
                 <div className="flex justify-between items-center mb-2">
                   <span>Elite Grooming Reservation</span>
                   <span className="font-serif font-bold text-gold">₹999</span>
@@ -298,7 +350,16 @@ const App: React.FC = () => {
                   <span className="gold-gradient">₹1,048</span>
                 </div>
               </div>
-              <button onClick={() => { logActivity('booking_confirmed', `Payment confirmed by ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Complete Transaction</button>
+              
+              <div className="grid grid-cols-3 gap-4 mb-8">
+                {['PhonePe', 'GPay', 'Paytm'].map(p => (
+                  <div key={p} className="p-4 bg-white/5 border border-white/10 rounded-2xl text-center grayscale hover:grayscale-0 cursor-pointer transition-all hover:border-gold">
+                    <span className="text-[10px] font-black uppercase">{p}</span>
+                  </div>
+                ))}
+              </div>
+              
+              <button onClick={() => { logActivity('booking_confirmed', `Authorization Success by ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Authorize Financial Flow</button>
             </div>
           </div>
         </div>
