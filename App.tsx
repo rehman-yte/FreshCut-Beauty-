@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase.ts';
-import { UserRole, Profile, Professional, Service, Category, Booking } from './types.ts';
+import { UserRole, Profile, Professional, Service, Category } from './types.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { AdminPanel } from './components/AdminPanel.tsx';
 import { Dashboard } from './components/Dashboard.tsx';
@@ -26,7 +26,13 @@ const GALLERY_IMAGES = [
   "https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&q=80"
 ];
 
-type AppView = 'home' | 'dashboard' | 'booking-flow' | 'partner' | 'login' | 'signup' | 'admin-panel' | 'payment-mockup' | 'admin-login';
+const DECORATIVE_FOOTER_IMAGES = [
+  "https://images.unsplash.com/photo-1512690196236-d5a23290393a?auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1595152772835-219674b2a8a6?auto=format&fit=crop&q=80"
+];
+
+type AppView = 'home' | 'dashboard' | 'booking-flow' | 'partner' | 'login' | 'signup' | 'admin-panel';
 
 const App: React.FC = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -36,18 +42,13 @@ const App: React.FC = () => {
   const [approvedPartners, setApprovedPartners] = useState<Professional[]>([]);
 
   // Auth States
-  const [mobile, setMobile] = useState('');
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [authRole, setAuthRole] = useState<UserRole>('customer');
-  const [authStep, setAuthStep] = useState<'mobile' | 'otp' | 'admin'>('mobile');
-  
-  // Dev Mode OTP States
-  const [devOtp, setDevOtp] = useState('');
-  const [showDevToast, setShowDevToast] = useState(false);
+  const [authStep, setAuthStep] = useState<'info' | 'otp' | 'admin'>('info');
   const [enteredOtp, setEnteredOtp] = useState('');
-  const [pendingUser, setPendingUser] = useState<any>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
 
   useEffect(() => {
     const initApp = async () => {
@@ -58,7 +59,7 @@ const App: React.FC = () => {
         if (savedProfile) {
           const parsed = JSON.parse(savedProfile);
           setProfile(parsed);
-          if (savedView && savedView !== 'login' && savedView !== 'signup' && savedView !== 'admin-login') {
+          if (savedView && !['login', 'signup'].includes(savedView)) {
             setCurrentView(savedView as AppView);
           }
         }
@@ -110,47 +111,80 @@ const App: React.FC = () => {
     }
   };
 
-  const initiateAuth = async (e: React.FormEvent, type: 'login' | 'signup') => {
-    e.preventDefault();
-    
-    // Generate Dev Mode OTP
-    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    setDevOtp(generatedOtp);
-    setShowDevToast(true);
-    
-    // Auto-dismiss toast after 10 seconds
-    setTimeout(() => setShowDevToast(false), 10000);
-
-    const userData = {
-      id: 'usr-' + Date.now(),
-      full_name: fullName || (type === 'login' ? 'Returning Member' : 'Artisan Member'),
-      mobile: mobile,
-      email: email || `${mobile}@freshcut.com`,
-      role: authRole,
-      status: authRole === 'professional' && type === 'signup' ? 'draft' : 'active',
-      otp_verified: false,
-      email_verified: false,
-      pan_verified: false
-    };
-
-    setPendingUser(userData);
-    setAuthStep('otp');
-    
+  const logActivity = async (action: string, details: string) => {
     await supabase.from('notifications').insert([{
-      type: 'auth_attempt',
-      actor_role: authRole,
-      message: `DEV_MODE: OTP generated for ${mobile}: ${generatedOtp}`,
+      type: 'activity_log',
+      actor_role: profile?.role || 'anonymous',
+      message: `${profile?.full_name || 'System'}: ${action} - ${details}`,
       is_read: false
     }]);
   };
 
-  const handleAdminAuth = (e: React.FormEvent) => {
+  const sendOtpChallenge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthLoading(true);
+    try {
+      const response = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAuthStep('otp');
+        logActivity('OTP_CHALLENGE', `Email identity challenged: ${email}`);
+      } else {
+        throw new Error(data.error || 'Failed to initiate verification.');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const verifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthLoading(true);
+    try {
+      const response = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: enteredOtp }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        const newProfile: Profile = {
+          id: 'usr-' + Date.now(),
+          full_name: fullName || 'Verified Member',
+          email,
+          role: authRole,
+          status: authRole === 'professional' ? 'draft' : 'active',
+          otp_verified: true,
+          email_verified: true,
+          pan_verified: false
+        };
+        setProfile(newProfile);
+        setCurrentView('dashboard');
+        setAuthStep('info');
+        logActivity('AUTH_SUCCESS', `${email} successfully established session.`);
+      } else {
+        throw new Error(data.error || 'Invalid verification hash.');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
       const adminProfile: Profile = {
-        id: 'admin-oracle-001',
-        full_name: 'Marketplace Supervisor',
-        email: email,
+        id: 'admin-001',
+        full_name: 'Marketplace Oracle',
+        email,
         role: 'admin',
         status: 'active',
         otp_verified: true,
@@ -159,43 +193,21 @@ const App: React.FC = () => {
       };
       setProfile(adminProfile);
       setCurrentView('admin-panel');
-      setAuthStep('mobile');
-      setEmail('');
-      setPassword('');
+      logActivity('ADMIN_ACCESS', 'High-clearance supervisor accessed Oracle terminal.');
     } else {
-      alert("Unauthorized access: Invalid administrative credentials.");
-    }
-  };
-
-  const verifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (enteredOtp === devOtp || enteredOtp === '123456') {
-      const verifiedUser = { ...pendingUser, otp_verified: true };
-      setProfile(verifiedUser);
-      setAuthStep('mobile');
-      setEnteredOtp('');
-      setCurrentView('dashboard');
-      
-      await supabase.from('notifications').insert([{
-        type: 'auth_success',
-        actor_role: verifiedUser.role,
-        message: `${verifiedUser.full_name} authorized via Dev OTP.`,
-        is_read: false
-      }]);
-    } else {
-      alert("Invalid OTP hash. Verification failed.");
+      alert("Unauthorized: Clearance level insufficient.");
     }
   };
 
   const handleLogout = () => {
+    logActivity('SESSION_TERMINATED', 'User voluntarily exited secure session.');
     setProfile(null);
     localStorage.removeItem('freshcut_session');
-    localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
   };
 
   const handleViewChange = (view: string) => {
-    const protectedViews = ['dashboard', 'admin-panel', 'payment-mockup', 'booking-flow'];
+    const protectedViews = ['dashboard', 'admin-panel', 'booking-flow'];
     if (protectedViews.includes(view) && !profile) {
       setCurrentView('login');
     } else {
@@ -203,6 +215,13 @@ const App: React.FC = () => {
       setCurrentView(view as AppView);
       if (view === 'home') fetchApprovedPartners();
     }
+  };
+
+  const handleScroll = (id: string) => {
+    handleViewChange('home');
+    setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
   return (
@@ -216,136 +235,61 @@ const App: React.FC = () => {
       />
 
       <div className="flex-grow">
-        {currentView === 'login' && (
+        {(currentView === 'login' || currentView === 'signup') && (
           <div className="min-h-screen pt-32 flex items-center justify-center p-4">
-            <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
+            <div className="glass p-12 rounded-[2.5rem] border border-white/10 w-full max-w-md animate-fadeIn">
               <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">
-                {authStep === 'admin' ? 'Admin Oracle' : 'Member Login'}
+                {authStep === 'admin' ? 'Oracle Login' : (currentView === 'login' ? 'Member Portal' : 'Artisan Signup')}
               </h2>
-              <form onSubmit={authStep === 'admin' ? handleAdminAuth : (authStep === 'mobile' ? (e) => initiateAuth(e, 'login') : verifyOtp)} className="space-y-6">
-                {authStep !== 'admin' && (
-                  <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
-                    <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
-                    <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+              
+              <form onSubmit={authStep === 'admin' ? handleAdminLogin : (authStep === 'otp' ? verifyOtp : sendOtpChallenge)} className="space-y-6">
+                {authStep === 'info' && (
+                  <>
+                    <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
+                      <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
+                      <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+                    </div>
+                    {currentView === 'signup' && (
+                      <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Identity Name" required />
+                    )}
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email Address" required />
+                    <button type="submit" disabled={isAuthLoading} className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">
+                      {isAuthLoading ? 'Establishing Protocol...' : 'Request OTP Challenge'}
+                    </button>
+                  </>
+                )}
+
+                {authStep === 'otp' && (
+                  <div className="space-y-6 animate-slideUp">
+                    <p className="text-[10px] text-white/40 uppercase tracking-widest text-center">Protocol sent to {email}. Enter 6-digit hash below.</p>
+                    <input type="text" maxLength={6} value={enteredOtp} onChange={(e) => setEnteredOtp(e.target.value)} className="w-full bg-white/5 border border-gold/50 rounded-2xl px-6 py-5 text-center text-2xl font-black tracking-[1em] text-gold outline-none" placeholder="XXXXXX" required />
+                    <button type="submit" disabled={isAuthLoading} className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">
+                      {isAuthLoading ? 'Verifying Payload...' : 'Authorize Session'}
+                    </button>
+                    <button type="button" onClick={() => setAuthStep('info')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-white">Return to Identity Input</button>
                   </div>
                 )}
-                
-                {authStep === 'admin' ? (
+
+                {authStep === 'admin' && (
                   <div className="space-y-4 animate-slideUp">
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Admin Identity" required />
-                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Clearance Key" required />
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 text-[10px] font-black">+91</span>
-                    <input 
-                      type="tel" 
-                      disabled={authStep === 'otp'}
-                      value={mobile} 
-                      onChange={(e) => setMobile(e.target.value)} 
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold disabled:opacity-50" 
-                      placeholder="Mobile Number" 
-                      required 
-                    />
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Admin Email" required />
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Oracle Password" required />
+                    <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">Authorize Oracle</button>
+                    <button type="button" onClick={() => setAuthStep('info')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-white">Return to Member Access</button>
                   </div>
                 )}
-
-                {authStep === 'otp' && (
-                  <div className="animate-slideUp">
-                    <input 
-                      type="text" 
-                      maxLength={6}
-                      value={enteredOtp} 
-                      onChange={(e) => setEnteredOtp(e.target.value)} 
-                      className="w-full bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold text-center tracking-[1em] font-black text-gold" 
-                      placeholder="XXXXXX" 
-                      required 
-                    />
-                    <p className="text-[9px] text-white/30 uppercase tracking-widest mt-2 text-center">Enter 6-digit verification hash</p>
-                  </div>
-                )}
-
-                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">
-                  {authStep === 'admin' ? 'Authorize Admin' : (authStep === 'mobile' ? 'Request OTP' : 'Authorize Session')}
-                </button>
-                
-                <div className="flex flex-col gap-3 pt-4">
-                  {authStep === 'otp' && (
-                    <button type="button" onClick={() => setAuthStep('mobile')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Change Number</button>
-                  )}
-                  {authStep !== 'admin' ? (
-                    <button type="button" onClick={() => setAuthStep('admin')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Admin Oracle Access</button>
-                  ) : (
-                    <button type="button" onClick={() => setAuthStep('mobile')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Back to Member Access</button>
-                  )}
-                </div>
               </form>
-              {authStep !== 'admin' && (
-                <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">New Application</button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {currentView === 'signup' && (
-          <div className="min-h-screen pt-32 flex items-center justify-center p-4">
-            <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-              <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Registration</h2>
-              <form onSubmit={authStep === 'mobile' ? (e) => initiateAuth(e, 'signup') : verifyOtp} className="space-y-6">
-                <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
-                  <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
-                  <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
-                </div>
-                
-                <input 
-                  type="text" 
-                  disabled={authStep === 'otp'}
-                  value={fullName} 
-                  onChange={(e) => setFullName(e.target.value)} 
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold disabled:opacity-50" 
-                  placeholder="Full Name" 
-                  required 
-                />
-
-                <div className="relative">
-                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 text-[10px] font-black">+91</span>
-                  <input 
-                    type="tel" 
-                    disabled={authStep === 'otp'}
-                    value={mobile} 
-                    onChange={(e) => setMobile(e.target.value)} 
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold disabled:opacity-50" 
-                    placeholder="Mobile Number" 
-                    required 
-                  />
-                </div>
-
-                {authStep === 'otp' && (
-                  <div className="animate-slideUp">
-                    <input 
-                      type="text" 
-                      maxLength={6}
-                      value={enteredOtp} 
-                      onChange={(e) => setEnteredOtp(e.target.value)} 
-                      className="w-full bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold text-center tracking-[1em] font-black text-gold" 
-                      placeholder="XXXXXX" 
-                      required 
-                    />
-                    <p className="text-[9px] text-white/30 uppercase tracking-widest mt-2 text-center">Verify 6-digit Dev-hash</p>
-                  </div>
+              
+              <div className="mt-8 flex flex-col gap-3 text-center">
+                {authStep === 'info' && (
+                  <>
+                    <button onClick={() => setCurrentView(currentView === 'login' ? 'signup' : 'login')} className="text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">
+                      {currentView === 'login' ? 'Initialize New Membership' : 'Existing Member Entrance'}
+                    </button>
+                    <button onClick={() => setAuthStep('admin')} className="text-[10px] text-gold/40 uppercase tracking-widest hover:text-gold transition-colors font-black mt-2">Oracle Terminal Access</button>
+                  </>
                 )}
-
-                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">
-                   {authStep === 'mobile' ? 'Establish Registry' : 'Establish Session'}
-                </button>
-
-                <div className="flex flex-col gap-3 pt-4">
-                  {authStep === 'otp' && (
-                    <button type="button" onClick={() => setAuthStep('mobile')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Edit Application</button>
-                  )}
-                  <button type="button" onClick={() => { setAuthStep('admin'); setCurrentView('login'); }} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Admin Oracle Access</button>
-                </div>
-              </form>
+              </div>
             </div>
           </div>
         )}
@@ -385,7 +329,7 @@ const App: React.FC = () => {
               <div className="max-w-7xl mx-auto">
                 <div className="text-center mb-24">
                   <h2 className="text-gold text-[10px] font-black tracking-[0.6em] uppercase mb-4">Service Protocol Showcase</h2>
-                  <h3 className="text-5xl font-serif font-black gold-gradient uppercase">Artist Defined Pricing</h3>
+                  <h3 className="text-5xl font-serif font-black gold-gradient uppercase">Curation Suites</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                   {MOCK_SERVICES.map(service => (
@@ -393,7 +337,13 @@ const App: React.FC = () => {
                       <span className="text-[9px] font-black text-white/30 uppercase tracking-widest block mb-4">{service.category} suite</span>
                       <h4 className="text-xl font-bold mb-2 group-hover:text-gold transition-colors">{service.name}</h4>
                       <p className="text-[10px] text-white/40 mb-8 uppercase tracking-widest">{service.duration_mins} MIN SESSION</p>
-                      <div className="flex justify-end mt-4">
+                      
+                      <div className="flex justify-between items-end mt-4">
+                        {profile ? (
+                          <span className="text-lg font-black text-gold tracking-tighter">₹{service.price}</span>
+                        ) : (
+                          <span className="text-[9px] font-black text-white/10 uppercase tracking-widest">Sign in for pricing</span>
+                        )}
                         <button onClick={() => handleViewChange('booking-flow')} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-gold hover:text-dark-900 transition-all text-xl">+</button>
                       </div>
                     </div>
@@ -421,41 +371,38 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* MEDO AI STYLE DEV-OTP TOAST (BOTTOM-RIGHT) */}
-      {showDevToast && authStep === 'otp' && (
-        <div className="fixed bottom-8 right-8 z-[200] animate-slideUp">
-          <div className="glass px-6 py-4 rounded-2xl border border-gold/30 shadow-2xl flex items-center gap-4">
-            <div className="w-2 h-2 rounded-full bg-gold animate-pulse" />
-            <div className="flex flex-col">
-              <span className="text-[8px] font-black uppercase tracking-widest text-gold/60">Development Mode</span>
-              <span className="text-xs font-black tracking-widest text-white">OTP: <span className="text-gold">{devOtp}</span></span>
-            </div>
-            <button onClick={() => setShowDevToast(false)} className="ml-4 text-white/20 hover:text-white transition-all text-lg">&times;</button>
-          </div>
-        </div>
-      )}
-
       <footer className="bg-dark-900 border-t border-white/10 pt-32 pb-16 px-4 w-full">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-16 mb-24">
           <div className="md:col-span-2">
             <h2 className="text-3xl font-serif font-black gold-gradient mb-8 tracking-tighter">FRESH CUT</h2>
-            <p className="text-white/40 max-w-md leading-loose text-sm uppercase tracking-widest font-black text-[10px]">Providing a premium unisex artisan marketplace experience since 1994. Our architectural booking engine connects high-tier specialists with discerning clientele through uber-style demand fulfillment.</p>
+            <p className="text-white/40 max-w-md leading-loose text-sm uppercase tracking-widest font-black text-[10px] mb-12">
+              Providing a premium unisex artisan marketplace experience since 1994. Our architectural booking engine connects high-tier specialists with discerning clientele through uber-style demand fulfillment.
+            </p>
+            <div className="flex gap-4">
+              {DECORATIVE_FOOTER_IMAGES.map((img, idx) => (
+                <div key={idx} className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 grayscale hover:grayscale-0 transition-all duration-700">
+                  <img src={img} alt="Artisan Craft" className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
           </div>
           <div>
             <h4 className="text-gold text-[10px] font-black tracking-widest uppercase mb-8">Quick Links</h4>
             <div className="flex flex-col space-y-4">
               <button onClick={() => handleViewChange('home')} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Architectural Home</button>
-              <button onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Price & Services</button>
-              <button onClick={() => handleViewChange('partner')} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Partner With Us</button>
+              <button onClick={() => handleScroll('services')} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Price & Services</button>
+              <button onClick={() => handleViewChange('partner')} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Become a Partner</button>
+              <button onClick={() => handleViewChange('dashboard')} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Member Dashboard</button>
             </div>
           </div>
           <div>
             <h4 className="text-gold text-[10px] font-black tracking-widest uppercase mb-8">Support</h4>
-            <p className="text-white/40 text-[10px] font-black tracking-widest uppercase mb-2">General Inquiries</p>
-            <p className="text-white/70 text-[10px] font-black tracking-widest uppercase mb-6">rhfarooqui16@gmail.com</p>
+            <p className="text-white/40 text-[10px] font-black tracking-widest uppercase mb-2">Direct Inquiries</p>
+            <p className="text-white/70 text-[10px] font-black tracking-widest uppercase mb-8">rhfarooqui16@gmail.com</p>
             <div className="flex space-x-6">
-              <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:border-gold transition-all text-xs text-white/40 hover:text-gold cursor-pointer uppercase font-black">IG</div>
-              <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:border-gold transition-all text-xs text-white/40 hover:text-gold cursor-pointer uppercase font-black">TW</div>
+              <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:border-gold transition-all text-[10px] text-white/40 hover:text-gold cursor-pointer font-black uppercase tracking-widest">IG</div>
+              <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:border-gold transition-all text-[10px] text-white/40 hover:text-gold cursor-pointer font-black uppercase tracking-widest">TW</div>
+              <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:border-gold transition-all text-[10px] text-white/40 hover:text-gold cursor-pointer font-black uppercase tracking-widest">LI</div>
             </div>
           </div>
         </div>
