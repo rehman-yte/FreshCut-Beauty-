@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { Booking, Professional, Profile, ActivityNotification } from '../types';
-import { supabase } from '../supabase';
+import { Booking, Professional, Profile, ActivityNotification } from '../types.ts';
+import { supabase } from '../supabase.ts';
 
 interface AdminPanelProps {
   bookings: Booking[];

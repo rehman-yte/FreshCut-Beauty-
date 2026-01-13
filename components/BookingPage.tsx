@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Professional, Service, Category } from '../types';
+import { Professional, Service, Category } from '../types.ts';
 
 interface BookingPageProps {
   type: Category;

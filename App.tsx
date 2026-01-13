@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabase';
-import { UserRole, Profile, Professional, Service, Category, Booking } from './types';
-import { Navbar } from './components/Navbar';
-import { AdminPanel } from './components/AdminPanel';
-import { Dashboard } from './components/Dashboard';
-import { BookingPage } from './components/BookingPage';
-import { PartnerPage } from './components/PartnerPage';
+import { supabase } from './supabase.ts';
+import { UserRole, Profile, Professional, Service, Category, Booking } from './types.ts';
+import { Navbar } from './components/Navbar.tsx';
+import { AdminPanel } from './components/AdminPanel.tsx';
+import { Dashboard } from './components/Dashboard.tsx';
+import { BookingPage } from './components/BookingPage.tsx';
+import { PartnerPage } from './components/PartnerPage.tsx';
 
 const MOCK_SERVICES: Service[] = [
   { id: '1', name: 'Executive Gents Cut', category: 'gents', price: 999, duration_mins: 45 },
@@ -118,7 +118,7 @@ const App: React.FC = () => {
   const handleSendOtp = async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      alert("VERIFICATION ERROR: A valid email address is required to receive your security code.");
+      alert("VERIFICATION ERROR: A valid email address is required.");
       return;
     }
     
@@ -135,13 +135,13 @@ const App: React.FC = () => {
 
       if (response.ok) {
         setOtpSent(true);
-        alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut OTP Verification\n\nPlease check your inbox. Code expires in 5 minutes.`);
+        alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.`);
         await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
       } else {
         alert(`Verification Gateway Error: ${result.error || 'Server responded with an error.'}`);
       }
     } catch (error) {
-      alert("Connectivity Error: Unable to reach the verification server. This can happen if the Vercel API deployment is still in progress or if there's a routing conflict.");
+      alert("Connectivity Error: Unable to reach the verification server.");
     } finally {
       setIsSendingOtp(false);
     }
@@ -164,13 +164,13 @@ const App: React.FC = () => {
 
       if (response.ok && result.verified) {
         setIsOtpVerified(true);
-        alert("IDENTITY CONFIRMED: Email ownership verified. Registry unlocked.");
+        alert("IDENTITY CONFIRMED: Email ownership verified.");
         logActivity('system_action', `Identity Verified: ${email}`, 'auth-success', 'customer');
       } else {
-        alert(`INVALID OTP: ${result.error || 'Verification protocol rejected the code.'}`);
+        alert(`INVALID OTP: ${result.error || 'Verification rejected.'}`);
       }
     } catch (error) {
-      alert("Identity Verification Timeout: Could not reach authorization service. Please retry.");
+      alert("Identity Verification Timeout.");
     }
   };
 
@@ -190,7 +190,7 @@ const App: React.FC = () => {
           pan_verified: true
         };
         setProfile(adminProfile);
-        await logActivity('user_login', `Admin Identity Authenticated: Supervisor Session Started`, adminProfile.id, 'admin');
+        await logActivity('user_login', `Admin Identity Authenticated`, adminProfile.id, 'admin');
         setCurrentView('admin-panel');
         return;
       } else {
@@ -201,7 +201,7 @@ const App: React.FC = () => {
 
     if (type === 'signup' && authRole === 'customer') {
       if (!isOtpVerified) {
-        alert("REGISTRY ERROR: Email identity verification is mandatory for Customer registry entries.");
+        alert("REGISTRY ERROR: Email identity verification is mandatory.");
         return;
       }
     }
@@ -219,16 +219,6 @@ const App: React.FC = () => {
     };
 
     setProfile(newProfile);
-    
-    if (type === 'signup') {
-      await logActivity('user_signup', `New ${authRole} entry in registry: ${newProfile.full_name}`, newProfile.id, authRole);
-      if (authRole === 'professional') {
-        alert("ONBOARDING: Profile established as 'Pending'. Log in to complete document verification for marketplace activation.");
-      }
-    } else {
-      await logActivity('user_login', `Member Identity Authorized: ${newProfile.full_name}`, newProfile.id, authRole);
-    }
-    
     setCurrentView('dashboard');
   };
 
@@ -253,7 +243,7 @@ const App: React.FC = () => {
       }]);
 
       if (!error) {
-        await logActivity('booking_created', `Marketplace Demand Signal emitted by ${profile.full_name}`, bookingId);
+        await logActivity('booking_created', `Demand Signal emitted by ${profile.full_name}`, bookingId);
         setCurrentView('payment-mockup');
       }
     } catch (err) {
@@ -267,14 +257,8 @@ const App: React.FC = () => {
     localStorage.removeItem('freshcut_session');
     localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
-    fetchApprovedPartners();
-    // Security cleanup
     setOtpSent(false);
     setIsOtpVerified(false);
-    setOtp('');
-    setMobile('');
-    setEmail('');
-    setPassword('');
   };
 
   const handleViewChange = (view: string) => {
@@ -291,10 +275,7 @@ const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center">
-        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse mb-6">Securing Architecture...</h1>
-        <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
-          <div className="h-full bg-gold animate-[progress_2s_infinite_linear]" style={{width: '30%'}} />
-        </div>
+        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse">Securing Architecture...</h1>
       </div>
     );
   }
@@ -319,10 +300,91 @@ const App: React.FC = () => {
                 <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
               </div>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Identity (Email)" required />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Clearance Key (Password)" required />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Clearance Key" required />
               <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Authorize Access</button>
             </form>
-            <div className="mt-8 flex flex-col items-center gap-4">
-              <button onClick={() => setCurrentView('signup')} className="text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Apply for Registry</button>
-              <div className="h-px w-12 bg-white/10" />
-              <button onClick={() => setCurrentView('admin-login')} className="px-6 py-2 border border-white
+            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">Apply for Registry</button>
+          </div>
+        </div>
+      )}
+
+      {currentView === 'signup' && (
+        <div className="min-h-screen pt-32 flex items-center justify-center p-4">
+          <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
+            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Registration</h2>
+            <form onSubmit={(e) => handleAuth(e, 'signup')} className="space-y-6">
+              <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
+                <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
+                <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+              </div>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
+              
+              {authRole === 'customer' && (
+                <div className="space-y-4 pt-4 border-t border-white/5 mt-4">
+                  <div className="flex gap-2">
+                    <button type="button" onClick={handleSendOtp} disabled={isSendingOtp} className="w-full py-4 bg-gold/10 text-gold border border-gold/30 rounded-2xl text-[10px] font-black uppercase hover:bg-gold hover:text-dark-900 transition-all">
+                      {isSendingOtp ? 'SENDING...' : 'SEND OTP'}
+                    </button>
+                  </div>
+                  {otpSent && !isOtpVerified && (
+                    <div className="flex gap-2">
+                      <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} className="flex-1 bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold text-center font-black" placeholder="OTP" required />
+                      <button type="button" onClick={handleVerifyOtp} className="px-6 bg-gold text-dark-900 rounded-2xl text-[10px] font-black uppercase">VERIFY</button>
+                    </div>
+                  )}
+                  {isOtpVerified && (
+                    <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-2xl text-center">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-green-400">Email Verified ✓</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
+              <button type="submit" disabled={authRole === 'customer' && !isOtpVerified} className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 disabled:opacity-30">Establish Identity</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {currentView === 'home' && (
+        <main className="animate-fadeIn">
+          <section className="relative h-screen flex items-center justify-center overflow-hidden">
+            <div className="absolute inset-0 z-0">
+              {HERO_IMAGES.map((img, idx) => (
+                <img key={img} src={img} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${heroImageIndex === idx ? 'opacity-40' : 'opacity-0'}`} alt="Background" />
+              ))}
+              <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-dark-900" />
+            </div>
+            <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
+              <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Uber-Style Artisan Matching &bull; Est. 1994</span>
+              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Master.<br/><span className="gold-gradient italic">Artistry.</span></h1>
+              <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
+                <button onClick={() => handleViewChange('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">RESERVE SLOT</button>
+              </div>
+            </div>
+          </section>
+        </main>
+      )}
+
+      {currentView === 'dashboard' && profile && (
+        <Dashboard role={profile.role} bookings={[]} />
+      )}
+
+      {currentView === 'admin-panel' && profile?.role === 'admin' && (
+        <AdminPanel bookings={[]} professionals={approvedPartners} onUpdateStatus={() => {}} />
+      )}
+
+      {currentView === 'partner' && (
+        <PartnerPage onSubmit={() => { setCurrentView('home'); fetchApprovedPartners(); }} />
+      )}
+
+      {currentView === 'booking-flow' && (
+        <BookingPage type="gents" professionals={approvedPartners.filter(p => p.is_online)} services={MOCK_SERVICES} onSubmit={handleBookingComplete} onBack={() => setCurrentView('home')} />
+      )}
+    </div>
+  );
+};
+
+export default App;

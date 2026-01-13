@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { Booking, UserRole, ActivityNotification, Professional, Profile } from '../types';
-import { supabase } from '../supabase';
+import { Booking, UserRole, ActivityNotification, Professional, Profile } from '../types.ts';
+import { supabase } from '../supabase.ts';
 
 interface DashboardProps {
   role: UserRole;
