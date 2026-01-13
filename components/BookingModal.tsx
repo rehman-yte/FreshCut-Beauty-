@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 // Changed Barber to Professional as per types.ts
-import { Professional, Service } from '../types';
+import { Professional, Service } from '../types.ts';
 
 interface BookingModalProps {
   isOpen: boolean;
