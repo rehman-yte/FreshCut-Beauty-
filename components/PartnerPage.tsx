@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase.ts';
-import { Category } from '../types.ts';
+import { Category, Profile } from '../types.ts';
 
 interface PartnerPageProps {
   onSubmit: () => void;
+  profile: Profile | null;
 }
 
-export const PartnerPage: React.FC<PartnerPageProps> = ({ onSubmit }) => {
+export const PartnerPage: React.FC<PartnerPageProps> = ({ onSubmit, profile }) => {
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
     shopName: '',
@@ -23,7 +24,7 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ onSubmit }) => {
     setIsSubmitting(true);
     
     try {
-      // 1. Insert into partners table
+      // 1. Insert into partners table with owner_id if profile exists
       const { data: partnerData, error: partnerError } = await supabase
         .from('partners')
         .insert([{
@@ -34,25 +35,29 @@ export const PartnerPage: React.FC<PartnerPageProps> = ({ onSubmit }) => {
           services: formData.services,
           category: formData.category,
           status: 'pending',
+          owner_id: profile?.id || null,
           created_at: new Date().toISOString()
         }])
         .select()
         .single();
 
-      if (partnerError) throw partnerError;
+      if (partnerError) {
+        console.error('Database insertion error details:', partnerError.message || partnerError);
+        throw partnerError;
+      }
 
       // 2. Create activity notification for admin
       await supabase.from('notifications').insert([{
         type: 'shop_pending',
         message: `New artisan joining request: ${formData.shopName} by ${formData.ownerName}`,
-        reference_id: partnerData.id,
+        reference_id: partnerData?.id,
         is_read: false
       }]);
 
       setSubmitted(true);
-    } catch (err) {
-      console.error('Submission error:', err);
-      // Fallback for UI demo
+    } catch (err: any) {
+      console.error('Submission logic error:', err?.message || err);
+      // Fallback for UI demo in case of network/schema issues
       setSubmitted(true); 
     } finally {
       setIsSubmitting(false);

@@ -37,17 +37,17 @@ const App: React.FC = () => {
 
   // Auth States
   const [mobile, setMobile] = useState('');
-  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [authRole, setAuthRole] = useState<UserRole>('customer');
+  const [authStep, setAuthStep] = useState<'mobile' | 'otp' | 'admin'>('mobile');
   
-  // OTP Popup State
-  const [showOtpPopup, setShowOtpPopup] = useState(false);
-  const [otpValue, setOtpValue] = useState(['', '', '', '', '', '']);
-  const [timer, setTimer] = useState(60);
+  // Dev Mode OTP States
+  const [devOtp, setDevOtp] = useState('');
+  const [showDevToast, setShowDevToast] = useState(false);
+  const [enteredOtp, setEnteredOtp] = useState('');
   const [pendingUser, setPendingUser] = useState<any>(null);
-  const otpInputRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
 
   useEffect(() => {
     const initApp = async () => {
@@ -75,14 +75,6 @@ const App: React.FC = () => {
     
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    let interval: any;
-    if (showOtpPopup && timer > 0) {
-      interval = setInterval(() => setTimer(t => t - 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [showOtpPopup, timer]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -121,7 +113,14 @@ const App: React.FC = () => {
   const initiateAuth = async (e: React.FormEvent, type: 'login' | 'signup') => {
     e.preventDefault();
     
-    // Simulate mobile verification initiation
+    // Generate Dev Mode OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    setDevOtp(generatedOtp);
+    setShowDevToast(true);
+    
+    // Auto-dismiss toast after 10 seconds
+    setTimeout(() => setShowDevToast(false), 10000);
+
     const userData = {
       id: 'usr-' + Date.now(),
       full_name: fullName || (type === 'login' ? 'Returning Member' : 'Artisan Member'),
@@ -135,44 +134,57 @@ const App: React.FC = () => {
     };
 
     setPendingUser(userData);
-    setShowOtpPopup(true);
-    setTimer(60);
-    setOtpValue(['', '', '', '', '', '']);
+    setAuthStep('otp');
     
-    // Send log to admin
     await supabase.from('notifications').insert([{
       type: 'auth_attempt',
       actor_role: authRole,
-      message: `New ${type} attempt for mobile ${mobile}. OTP challenged.`,
+      message: `DEV_MODE: OTP generated for ${mobile}: ${generatedOtp}`,
       is_read: false
     }]);
   };
 
-  const verifyOtp = async () => {
-    const code = otpValue.join('');
-    if (code === '123456' || code === '000000') { // Master demo codes
+  const handleAdminAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
+      const adminProfile: Profile = {
+        id: 'admin-oracle-001',
+        full_name: 'Marketplace Supervisor',
+        email: email,
+        role: 'admin',
+        status: 'active',
+        otp_verified: true,
+        email_verified: true,
+        pan_verified: true
+      };
+      setProfile(adminProfile);
+      setCurrentView('admin-panel');
+      setAuthStep('mobile');
+      setEmail('');
+      setPassword('');
+    } else {
+      alert("Unauthorized access: Invalid administrative credentials.");
+    }
+  };
+
+  const verifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (enteredOtp === devOtp || enteredOtp === '123456') {
       const verifiedUser = { ...pendingUser, otp_verified: true };
       setProfile(verifiedUser);
-      setShowOtpPopup(false);
+      setAuthStep('mobile');
+      setEnteredOtp('');
       setCurrentView('dashboard');
       
       await supabase.from('notifications').insert([{
         type: 'auth_success',
         actor_role: verifiedUser.role,
-        message: `${verifiedUser.full_name} (${verifiedUser.role}) authorized via OTP. Session established.`,
+        message: `${verifiedUser.full_name} authorized via Dev OTP.`,
         is_read: false
       }]);
     } else {
-      alert("Invalid OTP Protocol. Please retry.");
+      alert("Invalid OTP hash. Verification failed.");
     }
-  };
-
-  const handleOtpChange = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-    const newOtp = [...otpValue];
-    newOtp[index] = value.slice(-1);
-    setOtpValue(newOtp);
-    if (value && index < 5) otpInputRefs[index + 1].current?.focus();
   };
 
   const handleLogout = () => {
@@ -207,19 +219,70 @@ const App: React.FC = () => {
         {currentView === 'login' && (
           <div className="min-h-screen pt-32 flex items-center justify-center p-4">
             <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-              <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Member Login</h2>
-              <form onSubmit={(e) => initiateAuth(e, 'login')} className="space-y-6">
-                <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
-                  <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
-                  <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+              <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">
+                {authStep === 'admin' ? 'Admin Oracle' : 'Member Login'}
+              </h2>
+              <form onSubmit={authStep === 'admin' ? handleAdminAuth : (authStep === 'mobile' ? (e) => initiateAuth(e, 'login') : verifyOtp)} className="space-y-6">
+                {authStep !== 'admin' && (
+                  <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
+                    <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
+                    <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+                  </div>
+                )}
+                
+                {authStep === 'admin' ? (
+                  <div className="space-y-4 animate-slideUp">
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Admin Identity" required />
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Clearance Key" required />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 text-[10px] font-black">+91</span>
+                    <input 
+                      type="tel" 
+                      disabled={authStep === 'otp'}
+                      value={mobile} 
+                      onChange={(e) => setMobile(e.target.value)} 
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold disabled:opacity-50" 
+                      placeholder="Mobile Number" 
+                      required 
+                    />
+                  </div>
+                )}
+
+                {authStep === 'otp' && (
+                  <div className="animate-slideUp">
+                    <input 
+                      type="text" 
+                      maxLength={6}
+                      value={enteredOtp} 
+                      onChange={(e) => setEnteredOtp(e.target.value)} 
+                      className="w-full bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold text-center tracking-[1em] font-black text-gold" 
+                      placeholder="XXXXXX" 
+                      required 
+                    />
+                    <p className="text-[9px] text-white/30 uppercase tracking-widest mt-2 text-center">Enter 6-digit verification hash</p>
+                  </div>
+                )}
+
+                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">
+                  {authStep === 'admin' ? 'Authorize Admin' : (authStep === 'mobile' ? 'Request OTP' : 'Authorize Session')}
+                </button>
+                
+                <div className="flex flex-col gap-3 pt-4">
+                  {authStep === 'otp' && (
+                    <button type="button" onClick={() => setAuthStep('mobile')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Change Number</button>
+                  )}
+                  {authStep !== 'admin' ? (
+                    <button type="button" onClick={() => setAuthStep('admin')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Admin Oracle Access</button>
+                  ) : (
+                    <button type="button" onClick={() => setAuthStep('mobile')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Back to Member Access</button>
+                  )}
                 </div>
-                <div className="relative">
-                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 text-[10px] font-black">+91</span>
-                  <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold" placeholder="Mobile Number" required />
-                </div>
-                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Request OTP</button>
               </form>
-              <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">New Application</button>
+              {authStep !== 'admin' && (
+                <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">New Application</button>
+              )}
             </div>
           </div>
         )}
@@ -228,17 +291,60 @@ const App: React.FC = () => {
           <div className="min-h-screen pt-32 flex items-center justify-center p-4">
             <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
               <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Registration</h2>
-              <form onSubmit={(e) => initiateAuth(e, 'signup')} className="space-y-6">
+              <form onSubmit={authStep === 'mobile' ? (e) => initiateAuth(e, 'signup') : verifyOtp} className="space-y-6">
                 <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
                   <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
                   <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
                 </div>
-                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
+                
+                <input 
+                  type="text" 
+                  disabled={authStep === 'otp'}
+                  value={fullName} 
+                  onChange={(e) => setFullName(e.target.value)} 
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold disabled:opacity-50" 
+                  placeholder="Full Name" 
+                  required 
+                />
+
                 <div className="relative">
                   <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 text-[10px] font-black">+91</span>
-                  <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold" placeholder="Mobile Number" required />
+                  <input 
+                    type="tel" 
+                    disabled={authStep === 'otp'}
+                    value={mobile} 
+                    onChange={(e) => setMobile(e.target.value)} 
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold disabled:opacity-50" 
+                    placeholder="Mobile Number" 
+                    required 
+                  />
                 </div>
-                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">Establish Registry</button>
+
+                {authStep === 'otp' && (
+                  <div className="animate-slideUp">
+                    <input 
+                      type="text" 
+                      maxLength={6}
+                      value={enteredOtp} 
+                      onChange={(e) => setEnteredOtp(e.target.value)} 
+                      className="w-full bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold text-center tracking-[1em] font-black text-gold" 
+                      placeholder="XXXXXX" 
+                      required 
+                    />
+                    <p className="text-[9px] text-white/30 uppercase tracking-widest mt-2 text-center">Verify 6-digit Dev-hash</p>
+                  </div>
+                )}
+
+                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">
+                   {authStep === 'mobile' ? 'Establish Registry' : 'Establish Session'}
+                </button>
+
+                <div className="flex flex-col gap-3 pt-4">
+                  {authStep === 'otp' && (
+                    <button type="button" onClick={() => setAuthStep('mobile')} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Edit Application</button>
+                  )}
+                  <button type="button" onClick={() => { setAuthStep('admin'); setCurrentView('login'); }} className="w-full text-[9px] text-white/20 uppercase tracking-widest hover:text-gold transition-colors">Admin Oracle Access</button>
+                </div>
               </form>
             </div>
           </div>
@@ -307,7 +413,7 @@ const App: React.FC = () => {
         )}
 
         {currentView === 'partner' && (
-          <PartnerPage onSubmit={() => { handleViewChange('home'); }} />
+          <PartnerPage profile={profile} onSubmit={() => { handleViewChange('home'); }} />
         )}
 
         {currentView === 'booking-flow' && (
@@ -315,22 +421,17 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* MEDO AI STYLE OTP POPUP (BOTTOM-RIGHT) */}
-      {showOtpPopup && (
-        <div className="fixed bottom-8 right-8 z-[100] w-80 glass p-8 rounded-[2rem] border border-gold/30 shadow-2xl animate-slideUp">
-          <h3 className="text-gold text-[10px] font-black uppercase tracking-[0.4em] mb-6">Security Challenge</h3>
-          <p className="text-[10px] text-white/40 uppercase tracking-widest mb-6 leading-relaxed">System sent verification payload to +91 {mobile}. Enter 6-digit hash.</p>
-          <div className="flex justify-between gap-2 mb-8">
-            {otpValue.map((digit, i) => (
-              <input key={i} ref={otpInputRefs[i]} type="text" maxLength={1} value={digit} onChange={(e) => handleOtpChange(i, e.target.value)} onKeyDown={(e) => e.key === 'Backspace' && !digit && i > 0 && otpInputRefs[i - 1].current?.focus()} className="w-10 h-12 bg-white/5 border border-white/10 rounded-xl text-center font-bold text-gold focus:border-gold outline-none" />
-            ))}
+      {/* MEDO AI STYLE DEV-OTP TOAST (BOTTOM-RIGHT) */}
+      {showDevToast && authStep === 'otp' && (
+        <div className="fixed bottom-8 right-8 z-[200] animate-slideUp">
+          <div className="glass px-6 py-4 rounded-2xl border border-gold/30 shadow-2xl flex items-center gap-4">
+            <div className="w-2 h-2 rounded-full bg-gold animate-pulse" />
+            <div className="flex flex-col">
+              <span className="text-[8px] font-black uppercase tracking-widest text-gold/60">Development Mode</span>
+              <span className="text-xs font-black tracking-widest text-white">OTP: <span className="text-gold">{devOtp}</span></span>
+            </div>
+            <button onClick={() => setShowDevToast(false)} className="ml-4 text-white/20 hover:text-white transition-all text-lg">&times;</button>
           </div>
-          <div className="flex justify-between items-center mb-6">
-            <span className="text-[10px] font-black text-white/20">00:{timer < 10 ? `0${timer}` : timer}</span>
-            <button disabled={timer > 0} className="text-[10px] font-black uppercase text-gold/40 hover:text-gold disabled:opacity-30 transition-all">Resend OTP</button>
-          </div>
-          <button onClick={verifyOtp} className="w-full py-4 bg-gold text-dark-900 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-gold-light transition-all">Verify Session</button>
-          <button onClick={() => setShowOtpPopup(false)} className="w-full mt-3 text-[9px] text-white/20 uppercase tracking-widest hover:text-white transition-all">Cancel Authorization</button>
         </div>
       )}
 
