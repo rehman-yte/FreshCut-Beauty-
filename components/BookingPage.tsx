@@ -78,7 +78,6 @@ export const BookingPage: React.FC<BookingPageProps> = ({ professionals, service
                       <p className="font-bold uppercase tracking-tight group-hover:text-gold transition-colors mb-1">{s.name}</p>
                       <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">{s.duration_mins} MIN PROTOCOL</p>
                     </div>
-                    <p className="text-3xl font-serif font-black gold-gradient">₹{s.price}</p>
                   </button>
                 ))}
               </div>

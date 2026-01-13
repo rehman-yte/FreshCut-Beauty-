@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 // Changed Barber to Professional as per types.ts
 import { Professional, Service } from '../types';
@@ -87,7 +86,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, pro
                       <p className="font-bold">{service.name}</p>
                       <p className="text-sm text-white/50">{service.duration_mins} mins</p>
                     </div>
-                    <p className="font-serif font-bold text-gold">₹{service.price}</p>
                   </button>
                 ))}
               </div>

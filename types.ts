@@ -1,4 +1,3 @@
-
 export type UserRole = 'customer' | 'professional' | 'admin';
 export type Category = 'gents' | 'ladies';
 
@@ -9,7 +8,7 @@ export interface Profile {
   email: string;
   mobile?: string;
   avatar_url?: string;
-  status: 'active' | 'suspended' | 'pending';
+  status: 'active' | 'suspended' | 'pending' | 'draft';
   otp_verified: boolean;
   email_verified: boolean;
   pan_verified: boolean;
@@ -26,7 +25,7 @@ export interface Professional {
   specialties: string[];
   category: Category;
   is_online: boolean; 
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'draft';
   location_city?: string;
   trust_score: number;
   owner_id: string;
@@ -38,9 +37,10 @@ export interface Service {
   price: number;
   duration_mins: number;
   category: Category;
+  professional_id?: string;
 }
 
-export type BookingStatus = 'searching' | 'accepted' | 'in-progress' | 'completed' | 'rejected' | 'cancelled';
+export type BookingStatus = 'searching' | 'accepted' | 'locked' | 'booked' | 'in-progress' | 'completed' | 'rejected' | 'cancelled';
 
 export interface Booking {
   id: string;
@@ -61,7 +61,7 @@ export interface ActivityNotification {
   type: string;
   actor_role: UserRole;
   message: string;
-  reference_id: string;
+  reference_id?: string;
   is_read: boolean;
   created_at: string;
 }

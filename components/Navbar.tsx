@@ -6,7 +6,7 @@ interface NavbarProps {
   onLogout: () => void;
   onAuthOpen: () => void;
   onViewChange: (view: string) => void;
-  currentView: 'home' | 'dashboard';
+  currentView: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ userRole, onLogout, onAuthOpen, onViewChange, currentView }) => {
@@ -26,9 +26,9 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole, onLogout, onAuthOpen, 
 
         <div className="hidden md:flex items-center space-x-8">
           <button onClick={() => onViewChange('home')} className={`text-[10px] font-black tracking-widest uppercase transition-all hover:text-gold ${currentView === 'home' ? 'text-gold' : 'text-white/60'}`}>Home</button>
-          <button onClick={() => handleScroll('services')} className="text-[10px] font-black tracking-widest uppercase text-white/60 hover:text-gold transition-all">Services</button>
-          <button onClick={() => onViewChange(userRole === 'admin' ? 'admin-panel' : 'dashboard')} className={`text-[10px] font-black tracking-widest uppercase transition-all hover:text-gold ${currentView === 'dashboard' ? 'text-gold' : 'text-white/60'}`}>Dashboard</button>
-          <button onClick={() => onViewChange('partner')} className="text-[10px] font-black tracking-widest uppercase text-white/60 hover:text-gold transition-all">Partner With Us</button>
+          <button onClick={() => handleScroll('services')} className="text-[10px] font-black tracking-widest uppercase text-white/60 hover:text-gold transition-all">Price</button>
+          <button onClick={() => onViewChange(userRole === 'admin' ? 'admin-panel' : 'dashboard')} className={`text-[10px] font-black tracking-widest uppercase transition-all hover:text-gold ${currentView === 'dashboard' || currentView === 'admin-panel' ? 'text-gold' : 'text-white/60'}`}>Dashboard</button>
+          <button onClick={() => onViewChange('partner')} className={`text-[10px] font-black tracking-widest uppercase transition-all hover:text-gold ${currentView === 'partner' ? 'text-gold' : 'text-white/60'}`}>Become a Partner</button>
         </div>
 
         <div className="flex items-center space-x-4">

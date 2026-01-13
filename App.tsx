@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase.ts';
 import { UserRole, Profile, Professional, Service, Category, Booking } from './types.ts';
 import { Navbar } from './components/Navbar.tsx';
@@ -19,6 +19,13 @@ const HERO_IMAGES = [
   "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&q=80"
 ];
 
+const GALLERY_IMAGES = [
+  "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&q=80"
+];
+
 type AppView = 'home' | 'dashboard' | 'booking-flow' | 'partner' | 'login' | 'signup' | 'admin-panel' | 'payment-mockup' | 'admin-login';
 
 const App: React.FC = () => {
@@ -29,15 +36,18 @@ const App: React.FC = () => {
   const [approvedPartners, setApprovedPartners] = useState<Professional[]>([]);
 
   // Auth States
-  const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [email, setEmail] = useState('');
   const [authRole, setAuthRole] = useState<UserRole>('customer');
+  
+  // OTP Popup State
+  const [showOtpPopup, setShowOtpPopup] = useState(false);
+  const [otpValue, setOtpValue] = useState(['', '', '', '', '', '']);
+  const [timer, setTimer] = useState(60);
+  const [pendingUser, setPendingUser] = useState<any>(null);
+  const otpInputRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
 
   useEffect(() => {
     const initApp = async () => {
@@ -65,6 +75,14 @@ const App: React.FC = () => {
     
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    let interval: any;
+    if (showOtpPopup && timer > 0) {
+      interval = setInterval(() => setTimer(t => t - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [showOtpPopup, timer]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -100,166 +118,61 @@ const App: React.FC = () => {
     }
   };
 
-  const logActivity = async (type: string, message: string, refId: string = '', actorRole?: UserRole) => {
-    try {
-      await supabase.from('notifications').insert([{
-        type,
-        actor_role: actorRole || (profile?.role || 'customer'),
-        message,
-        reference_id: refId,
-        is_read: false,
-        created_at: new Date().toISOString()
-      }]);
-    } catch (e) {
-      console.warn('Logging failure:', e);
-    }
-  };
-
-  const safeFetchJson = async (url: string, options: RequestInit) => {
-    const response = await fetch(url, options);
-    const text = await response.text();
-    try {
-      return { data: JSON.parse(text), ok: response.ok };
-    } catch (e) {
-      return { error: text || 'Non-JSON response received', ok: false };
-    }
-  };
-
-  const handleSendOtp = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      alert("VERIFICATION ERROR: A valid email address is required.");
-      return;
-    }
-    
-    setIsSendingOtp(true);
-    
-    try {
-      const apiUrl = `${window.location.origin}/api/send-otp`;
-      const { data, error, ok } = await safeFetchJson(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-
-      if (ok) {
-        setOtpSent(true);
-        alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.`);
-        await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
-      } else {
-        alert(`Verification Gateway Error: ${error || data?.error || 'Server responded with an error.'}`);
-      }
-    } catch (error: any) {
-      console.error("OTP Connection Error:", error);
-      alert(`Connectivity Error: ${error.message || 'Unable to reach the verification server.'}`);
-    } finally {
-      setIsSendingOtp(false);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otp || otp.length < 6) {
-      alert("Please enter the 6-digit verification code.");
-      return;
-    }
-
-    try {
-      const apiUrl = `${window.location.origin}/api/verify-otp`;
-      const { data, error, ok } = await safeFetchJson(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp })
-      });
-
-      if (ok && data.verified) {
-        setIsOtpVerified(true);
-        alert("IDENTITY CONFIRMED: Email ownership verified.");
-        logActivity('system_action', `Identity Verified: ${email}`, 'auth-success', 'customer');
-      } else {
-        alert(`INVALID OTP: ${error || data?.error || 'Verification rejected.'}`);
-      }
-    } catch (error: any) {
-      console.error("OTP Verification Connection Error:", error);
-      alert(`Identity Verification Timeout or Network Error: ${error.message}`);
-    }
-  };
-
-  const handleAuth = async (e: React.FormEvent, type: 'login' | 'signup' | 'admin') => {
+  const initiateAuth = async (e: React.FormEvent, type: 'login' | 'signup') => {
     e.preventDefault();
     
-    if (type === 'admin') {
-      if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
-        const adminProfile: Profile = {
-          id: 'admin-oracle-001',
-          full_name: 'Marketplace Supervisor',
-          email: email,
-          role: 'admin',
-          status: 'active',
-          otp_verified: true,
-          email_verified: true,
-          pan_verified: true
-        };
-        setProfile(adminProfile);
-        await logActivity('user_login', `Admin Identity Authenticated`, adminProfile.id, 'admin');
-        setCurrentView('admin-panel');
-        return;
-      } else {
-        alert("ACCESS DENIED: Invalid administrative credentials.");
-        return;
-      }
-    }
-
-    if (type === 'signup' && authRole === 'customer') {
-      if (!isOtpVerified) {
-        alert("REGISTRY ERROR: Email identity verification is mandatory.");
-        return;
-      }
-    }
-
-    const newProfile: Profile = {
+    // Simulate mobile verification initiation
+    const userData = {
       id: 'usr-' + Date.now(),
-      full_name: fullName || 'Verified Artisan Member',
-      email: email,
+      full_name: fullName || (type === 'login' ? 'Returning Member' : 'Artisan Member'),
       mobile: mobile,
+      email: email || `${mobile}@freshcut.com`,
       role: authRole,
-      status: authRole === 'professional' ? 'pending' : 'active',
-      otp_verified: isOtpVerified,
-      email_verified: authRole === 'customer',
+      status: authRole === 'professional' && type === 'signup' ? 'draft' : 'active',
+      otp_verified: false,
+      email_verified: false,
       pan_verified: false
     };
 
-    setProfile(newProfile);
-    setCurrentView('dashboard');
+    setPendingUser(userData);
+    setShowOtpPopup(true);
+    setTimer(60);
+    setOtpValue(['', '', '', '', '', '']);
+    
+    // Send log to admin
+    await supabase.from('notifications').insert([{
+      type: 'auth_attempt',
+      actor_role: authRole,
+      message: `New ${type} attempt for mobile ${mobile}. OTP challenged.`,
+      is_read: false
+    }]);
   };
 
-  const handleBookingComplete = async (bookingData: any) => {
-    if (!profile) {
-      setCurrentView('login');
-      return;
-    }
-
-    try {
-      const appointmentTime = `${bookingData.date}T${bookingData.time}:00Z`;
-      const bookingId = 'bk-' + Date.now();
-      
-      const { error } = await supabase.from('bookings').insert([{
-        id: bookingId,
-        customer_id: profile.id,
-        professional_id: bookingData.professionalId || null,
-        service_id: bookingData.serviceId,
-        appointment_time: appointmentTime,
-        status: 'searching',
-        created_at: new Date().toISOString()
-      }]);
-
-      if (!error) {
-        await logActivity('booking_created', `Demand Signal emitted by ${profile.full_name}`, bookingId);
-        setCurrentView('payment-mockup');
-      }
-    } catch (err) {
-      console.error('Flow broken:', err);
+  const verifyOtp = async () => {
+    const code = otpValue.join('');
+    if (code === '123456' || code === '000000') { // Master demo codes
+      const verifiedUser = { ...pendingUser, otp_verified: true };
+      setProfile(verifiedUser);
+      setShowOtpPopup(false);
       setCurrentView('dashboard');
+      
+      await supabase.from('notifications').insert([{
+        type: 'auth_success',
+        actor_role: verifiedUser.role,
+        message: `${verifiedUser.full_name} (${verifiedUser.role}) authorized via OTP. Session established.`,
+        is_read: false
+      }]);
+    } else {
+      alert("Invalid OTP Protocol. Please retry.");
     }
+  };
+
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    const newOtp = [...otpValue];
+    newOtp[index] = value.slice(-1);
+    setOtpValue(newOtp);
+    if (value && index < 5) otpInputRefs[index + 1].current?.focus();
   };
 
   const handleLogout = () => {
@@ -267,8 +180,6 @@ const App: React.FC = () => {
     localStorage.removeItem('freshcut_session');
     localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
-    setOtpSent(false);
-    setIsOtpVerified(false);
   };
 
   const handleViewChange = (view: string) => {
@@ -282,117 +193,175 @@ const App: React.FC = () => {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center">
-        <h1 className="text-gold text-[10px] font-black tracking-[0.5em] uppercase animate-pulse">Securing Architecture...</h1>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-dark-900 text-white selection:bg-gold selection:text-dark-900">
+    <div className="min-h-screen bg-dark-900 text-white selection:bg-gold selection:text-dark-900 flex flex-col">
       <Navbar 
         userRole={profile?.role} 
         onLogout={handleLogout} 
         onAuthOpen={() => setCurrentView('login')}
-        currentView={currentView === 'dashboard' || currentView === 'admin-panel' ? 'dashboard' : 'home'}
+        currentView={currentView}
         onViewChange={handleViewChange}
       />
 
-      {currentView === 'login' && (
-        <div className="min-h-screen pt-32 flex items-center justify-center p-4">
-          <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Member Login</h2>
-            <form onSubmit={(e) => handleAuth(e, 'login')} className="space-y-6">
-              <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
-                <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
-                <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
-              </div>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Identity (Email)" required />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Clearance Key" required />
-              <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Authorize Access</button>
-            </form>
-            <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">Apply for Registry</button>
-          </div>
-        </div>
-      )}
-
-      {currentView === 'signup' && (
-        <div className="min-h-screen pt-32 flex items-center justify-center p-4">
-          <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
-            <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Registration</h2>
-            <form onSubmit={(e) => handleAuth(e, 'signup')} className="space-y-6">
-              <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
-                <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
-                <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
-              </div>
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Email" required />
-              
-              {authRole === 'customer' && (
-                <div className="space-y-4 pt-4 border-t border-white/5 mt-4">
-                  <div className="flex gap-2">
-                    <button type="button" onClick={handleSendOtp} disabled={isSendingOtp} className="w-full py-4 bg-gold/10 text-gold border border-gold/30 rounded-2xl text-[10px] font-black uppercase hover:bg-gold hover:text-dark-900 transition-all">
-                      {isSendingOtp ? 'SENDING...' : 'SEND OTP'}
-                    </button>
-                  </div>
-                  {otpSent && !isOtpVerified && (
-                    <div className="flex gap-2">
-                      <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} className="flex-1 bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold text-center font-black" placeholder="OTP" required />
-                      <button type="button" onClick={handleVerifyOtp} className="px-6 bg-gold text-dark-900 rounded-2xl text-[10px] font-black uppercase">VERIFY</button>
-                    </div>
-                  )}
-                  {isOtpVerified && (
-                    <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-2xl text-center">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-green-400">Email Verified ✓</p>
-                    </div>
-                  )}
+      <div className="flex-grow">
+        {currentView === 'login' && (
+          <div className="min-h-screen pt-32 flex items-center justify-center p-4">
+            <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
+              <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Member Login</h2>
+              <form onSubmit={(e) => initiateAuth(e, 'login')} className="space-y-6">
+                <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
+                  <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
+                  <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
                 </div>
-              )}
-              
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Password" required />
-              <button type="submit" disabled={authRole === 'customer' && !isOtpVerified} className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 disabled:opacity-30">Establish Identity</button>
-            </form>
+                <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 text-[10px] font-black">+91</span>
+                  <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold" placeholder="Mobile Number" required />
+                </div>
+                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Request OTP</button>
+              </form>
+              <button onClick={() => setCurrentView('signup')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">New Application</button>
+            </div>
           </div>
+        )}
+
+        {currentView === 'signup' && (
+          <div className="min-h-screen pt-32 flex items-center justify-center p-4">
+            <div className="glass p-12 rounded-[2rem] border border-white/10 w-full max-w-md animate-fadeIn">
+              <h2 className="text-4xl font-serif font-black mb-10 text-center text-gold uppercase tracking-tighter">Registration</h2>
+              <form onSubmit={(e) => initiateAuth(e, 'signup')} className="space-y-6">
+                <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-4">
+                  <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
+                  <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
+                </div>
+                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Full Name" required />
+                <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/40 text-[10px] font-black">+91</span>
+                  <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl pl-16 pr-6 py-4 outline-none focus:border-gold" placeholder="Mobile Number" required />
+                </div>
+                <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20">Establish Registry</button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {currentView === 'home' && (
+          <main className="animate-fadeIn">
+            <section className="relative h-screen flex items-center justify-center overflow-hidden">
+              <div className="absolute inset-0 z-0">
+                {HERO_IMAGES.map((img, idx) => (
+                  <img key={img} src={img} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${heroImageIndex === idx ? 'opacity-40' : 'opacity-0'}`} alt="Background" />
+                ))}
+                <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-dark-900" />
+              </div>
+              <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
+                <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Uber-Style Artisan Matching &bull; Est. 1994</span>
+                <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Master.<br/><span className="gold-gradient italic">Artistry.</span></h1>
+                <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
+                  <button onClick={() => handleViewChange('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">RESERVE SLOT</button>
+                  <button onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })} className="w-full sm:w-auto px-12 py-5 border border-white/20 text-white text-xs font-black tracking-widest rounded-full hover:bg-white/5 transition-all uppercase">VIEW SERVICES</button>
+                </div>
+              </div>
+            </section>
+
+            <section className="py-24 px-4 bg-dark-900/50">
+              <div className="max-w-7xl mx-auto">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
+                  {GALLERY_IMAGES.map((img, idx) => (
+                    <div key={idx} className="aspect-square relative overflow-hidden rounded-3xl border border-white/10 group">
+                      <img src={img} alt="Showcase" className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section id="services" className="py-32 px-4 bg-dark-900">
+              <div className="max-w-7xl mx-auto">
+                <div className="text-center mb-24">
+                  <h2 className="text-gold text-[10px] font-black tracking-[0.6em] uppercase mb-4">Service Protocol Showcase</h2>
+                  <h3 className="text-5xl font-serif font-black gold-gradient uppercase">Artist Defined Pricing</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                  {MOCK_SERVICES.map(service => (
+                    <div key={service.id} className="glass p-10 rounded-[2.5rem] border border-white/5 group hover:border-gold/30 transition-all">
+                      <span className="text-[9px] font-black text-white/30 uppercase tracking-widest block mb-4">{service.category} suite</span>
+                      <h4 className="text-xl font-bold mb-2 group-hover:text-gold transition-colors">{service.name}</h4>
+                      <p className="text-[10px] text-white/40 mb-8 uppercase tracking-widest">{service.duration_mins} MIN SESSION</p>
+                      <div className="flex justify-end mt-4">
+                        <button onClick={() => handleViewChange('booking-flow')} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-gold hover:text-dark-900 transition-all text-xl">+</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </main>
+        )}
+
+        {currentView === 'dashboard' && profile && (
+          <Dashboard role={profile.role} bookings={[]} />
+        )}
+
+        {currentView === 'admin-panel' && profile?.role === 'admin' && (
+          <AdminPanel bookings={[]} professionals={approvedPartners} onUpdateStatus={() => {}} />
+        )}
+
+        {currentView === 'partner' && (
+          <PartnerPage onSubmit={() => { handleViewChange('home'); }} />
+        )}
+
+        {currentView === 'booking-flow' && (
+          <BookingPage type="gents" professionals={approvedPartners.filter(p => p.is_online)} services={MOCK_SERVICES} onSubmit={() => handleViewChange('dashboard')} onBack={() => handleViewChange('home')} />
+        )}
+      </div>
+
+      {/* MEDO AI STYLE OTP POPUP (BOTTOM-RIGHT) */}
+      {showOtpPopup && (
+        <div className="fixed bottom-8 right-8 z-[100] w-80 glass p-8 rounded-[2rem] border border-gold/30 shadow-2xl animate-slideUp">
+          <h3 className="text-gold text-[10px] font-black uppercase tracking-[0.4em] mb-6">Security Challenge</h3>
+          <p className="text-[10px] text-white/40 uppercase tracking-widest mb-6 leading-relaxed">System sent verification payload to +91 {mobile}. Enter 6-digit hash.</p>
+          <div className="flex justify-between gap-2 mb-8">
+            {otpValue.map((digit, i) => (
+              <input key={i} ref={otpInputRefs[i]} type="text" maxLength={1} value={digit} onChange={(e) => handleOtpChange(i, e.target.value)} onKeyDown={(e) => e.key === 'Backspace' && !digit && i > 0 && otpInputRefs[i - 1].current?.focus()} className="w-10 h-12 bg-white/5 border border-white/10 rounded-xl text-center font-bold text-gold focus:border-gold outline-none" />
+            ))}
+          </div>
+          <div className="flex justify-between items-center mb-6">
+            <span className="text-[10px] font-black text-white/20">00:{timer < 10 ? `0${timer}` : timer}</span>
+            <button disabled={timer > 0} className="text-[10px] font-black uppercase text-gold/40 hover:text-gold disabled:opacity-30 transition-all">Resend OTP</button>
+          </div>
+          <button onClick={verifyOtp} className="w-full py-4 bg-gold text-dark-900 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-gold-light transition-all">Verify Session</button>
+          <button onClick={() => setShowOtpPopup(false)} className="w-full mt-3 text-[9px] text-white/20 uppercase tracking-widest hover:text-white transition-all">Cancel Authorization</button>
         </div>
       )}
 
-      {currentView === 'home' && (
-        <main className="animate-fadeIn">
-          <section className="relative h-screen flex items-center justify-center overflow-hidden">
-            <div className="absolute inset-0 z-0">
-              {HERO_IMAGES.map((img, idx) => (
-                <img key={img} src={img} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${heroImageIndex === idx ? 'opacity-40' : 'opacity-0'}`} alt="Background" />
-              ))}
-              <div className="absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-dark-900" />
+      <footer className="bg-dark-900 border-t border-white/10 pt-32 pb-16 px-4 w-full">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-16 mb-24">
+          <div className="md:col-span-2">
+            <h2 className="text-3xl font-serif font-black gold-gradient mb-8 tracking-tighter">FRESH CUT</h2>
+            <p className="text-white/40 max-w-md leading-loose text-sm uppercase tracking-widest font-black text-[10px]">Providing a premium unisex artisan marketplace experience since 1994. Our architectural booking engine connects high-tier specialists with discerning clientele through uber-style demand fulfillment.</p>
+          </div>
+          <div>
+            <h4 className="text-gold text-[10px] font-black tracking-widest uppercase mb-8">Quick Links</h4>
+            <div className="flex flex-col space-y-4">
+              <button onClick={() => handleViewChange('home')} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Architectural Home</button>
+              <button onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Price & Services</button>
+              <button onClick={() => handleViewChange('partner')} className="text-left text-[10px] font-black text-white/40 hover:text-gold transition-colors uppercase tracking-widest">Partner With Us</button>
             </div>
-            <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
-              <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Uber-Style Artisan Matching &bull; Est. 1994</span>
-              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Master.<br/><span className="gold-gradient italic">Artistry.</span></h1>
-              <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
-                <button onClick={() => handleViewChange('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">RESERVE SLOT</button>
-              </div>
+          </div>
+          <div>
+            <h4 className="text-gold text-[10px] font-black tracking-widest uppercase mb-8">Support</h4>
+            <p className="text-white/40 text-[10px] font-black tracking-widest uppercase mb-2">General Inquiries</p>
+            <p className="text-white/70 text-[10px] font-black tracking-widest uppercase mb-6">rhfarooqui16@gmail.com</p>
+            <div className="flex space-x-6">
+              <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:border-gold transition-all text-xs text-white/40 hover:text-gold cursor-pointer uppercase font-black">IG</div>
+              <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:border-gold transition-all text-xs text-white/40 hover:text-gold cursor-pointer uppercase font-black">TW</div>
             </div>
-          </section>
-        </main>
-      )}
-
-      {currentView === 'dashboard' && profile && (
-        <Dashboard role={profile.role} bookings={[]} />
-      )}
-
-      {currentView === 'admin-panel' && profile?.role === 'admin' && (
-        <AdminPanel bookings={[]} professionals={approvedPartners} onUpdateStatus={() => {}} />
-      )}
-
-      {currentView === 'partner' && (
-        <PartnerPage onSubmit={() => { setCurrentView('home'); fetchApprovedPartners(); }} />
-      )}
-
-      {currentView === 'booking-flow' && (
-        <BookingPage type="gents" professionals={approvedPartners.filter(p => p.is_online)} services={MOCK_SERVICES} onSubmit={handleBookingComplete} onBack={() => setCurrentView('home')} />
-      )}
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto pt-16 border-t border-white/5 text-center">
+          <p className="text-white/20 text-[9px] font-black uppercase tracking-[0.6em]">&copy; 2024 FRESH CUT BEAUTY ARCHITECTURE. ALL PROTOCOLS RESERVED.</p>
+        </div>
+      </footer>
     </div>
   );
 };
