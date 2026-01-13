@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import { UserRole, Profile, Professional, Service, Category, Booking } from './types';
@@ -33,10 +32,27 @@ const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
 
+  // PERSISTENCE PROTOCOL: Restore session and view on mount
   useEffect(() => {
     const initApp = async () => {
       try {
+        // 1. Check browser storage for session
+        const savedSession = localStorage.getItem('freshcut_profile');
+        const savedView = localStorage.getItem('freshcut_view');
+        
+        if (savedSession) {
+          const parsedProfile = JSON.parse(savedSession);
+          setProfile(parsedProfile);
+          
+          // 2. Restore view if it was a protected or specific state
+          if (savedView && savedView !== 'login' && savedView !== 'signup') {
+            setCurrentView(savedView as AppView);
+          }
+        }
+        
         await fetchApprovedPartners();
+      } catch (err) {
+        console.error('Initialization error:', err);
       } finally {
         setIsLoading(false);
       }
@@ -50,8 +66,14 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Sync currentView to localStorage whenever it changes
+  useEffect(() => {
+    if (!isLoading) {
+      localStorage.setItem('freshcut_view', currentView);
+    }
+  }, [currentView, isLoading]);
+
   const fetchApprovedPartners = async () => {
-    // SYSTEM RULE: Only 'approved' partners are fetched for public display
     const { data, error } = await supabase
       .from('partners')
       .select('*')
@@ -75,7 +97,6 @@ const App: React.FC = () => {
   };
 
   const logActivity = async (type: string, message: string, refId: string = '') => {
-    // CENTRAL ACTIVITY LOG: Every action creates a notification for Admin oversight
     try {
       await supabase.from('notifications').insert([{
         type,
@@ -100,7 +121,9 @@ const App: React.FC = () => {
       role: isAdmin ? 'admin' : 'customer'
     };
 
+    // PERSIST SESSION
     setProfile(newProfile);
+    localStorage.setItem('freshcut_profile', JSON.stringify(newProfile));
     
     if (type === 'signup') {
       await logActivity('user_signup', `New registration: ${newProfile.full_name}`, newProfile.id);
@@ -118,8 +141,6 @@ const App: React.FC = () => {
     }
 
     try {
-      // SLOT FORMATTING & DOUBLE BOOKING PREVENTION
-      // Ensure date and time are provided
       if (!bookingData.date || !bookingData.time) {
         alert('Invalid slot format. Please select both date and time.');
         return;
@@ -127,7 +148,6 @@ const App: React.FC = () => {
 
       const appointmentTime = `${bookingData.date}T${bookingData.time}:00Z`;
       
-      // If professional is pre-selected (optional in Uber-style), check for conflicts
       if (bookingData.professionalId) {
         const { data: existingBookings } = await supabase
           .from('bookings')
@@ -146,10 +166,10 @@ const App: React.FC = () => {
       const { error } = await supabase.from('bookings').insert([{
         id: bookingId,
         customer_id: profile.id,
-        professional_id: bookingData.professionalId || null, // Can be null in Uber-style until matched
+        professional_id: bookingData.professionalId || null,
         service_id: bookingData.serviceId,
         appointment_time: appointmentTime,
-        status: 'searching', // Initial marketplace state
+        status: 'searching',
         created_at: new Date().toISOString()
       }]);
 
@@ -173,6 +193,14 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLogout = () => {
+    setProfile(null);
+    localStorage.removeItem('freshcut_profile');
+    localStorage.removeItem('freshcut_view');
+    setCurrentView('home');
+    fetchApprovedPartners();
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center">
@@ -189,7 +217,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-dark-900 text-white selection:bg-gold selection:text-dark-900">
       <Navbar 
         userRole={profile?.role} 
-        onLogout={() => { setProfile(null); setCurrentView('home'); fetchApprovedPartners(); }} 
+        onLogout={handleLogout} 
         onAuthOpen={() => setCurrentView('login')}
         currentView={currentView === 'dashboard' || currentView === 'admin-panel' ? 'dashboard' : 'home'}
         onViewChange={handleViewChange}
@@ -287,7 +315,7 @@ const App: React.FC = () => {
             </div>
             <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
               <span className="inline-block text-gold text-xs font-black tracking-[0.4em] uppercase mb-6">Uber-Style Artisan Matching &bull; Est. 1994</span>
-              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Master.<br/><span className="gold-gradient italic">Artisans.</span></h1>
+              <h1 className="text-6xl md:text-9xl font-serif font-black mb-8 leading-tight">Master.<br/><span className="gold-gradient italic">Artistry.</span></h1>
               <p className="text-lg md:text-xl text-white/70 mb-12 max-w-2xl mx-auto leading-relaxed">The ultimate decentralized destination for elite grooming. Instant matching with Master Barbers & Beauty Specialists.</p>
               <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
                 <button onClick={() => handleViewChange('booking-flow')} className="w-full sm:w-auto px-12 py-5 bg-gold text-dark-900 text-xs font-black tracking-widest rounded-full hover:bg-gold-light transition-all shadow-xl shadow-gold/20 uppercase">RESERVE SLOT</button>
@@ -318,7 +346,6 @@ const App: React.FC = () => {
                             <p className="text-white/30 text-[10px] font-black tracking-widest uppercase mb-6">{s.duration_mins} MINS</p>
                           </div>
                           <div className="flex justify-between items-center">
-                            {/* VISIBILITY RULE: Prices hidden until login */}
                             <span className={`text-2xl font-serif font-black gold-gradient transition-opacity duration-300 ${!profile ? 'invisible opacity-0' : 'visible opacity-100'}`}>
                               {profile ? `₹${s.price}` : ''}
                             </span>
