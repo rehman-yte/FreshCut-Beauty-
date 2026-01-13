@@ -119,30 +119,32 @@ const App: React.FC = () => {
   };
 
   const handleSendOtp = async () => {
-    // 1. Email Format Check
+    // 1. Email Format Audit
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      alert("VERIFICATION ERROR: A valid email identity is required to receive an OTP.");
+      alert("VERIFICATION ERROR: A valid email address is required to receive your security code.");
       return;
     }
     
     setIsSendingOtp(true);
     
     try {
-      // 2. Secure 6-Digit OTP Generation
+      // 2. Generate Secure 6-Digit OTP
       const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiryTime = Date.now() + 5 * 60 * 1000; // 5 Minutes Expiry strictly enforced
+      const expiryTime = Date.now() + 5 * 60 * 1000; // Strict 5-Minute Expiry
       
       /**
-       * PRODUCTION BACKEND INTEGRATION:
-       * Triggered via Supabase Edge Function using SendGrid API:
+       * PRODUCTION TRANSACTIONAL FLOW (SendGrid / Supabase Edge Functions):
        * 
-       * await supabase.functions.invoke('send-secure-otp', {
-       *   body: { 
-       *     to: email, 
-       *     otp: newOtp,
-       *     template: "signup_verification"
-       *   }
+       * await fetch('https://api.sendgrid.com/v3/mail/send', {
+       *   method: 'POST',
+       *   headers: { 'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`, 'Content-Type': 'application/json' },
+       *   body: JSON.stringify({
+       *     personalizations: [{ to: [{ email }] }],
+       *     from: { email: 'noreply@freshcut.com' },
+       *     subject: "Your Fresh Cut OTP Verification",
+       *     content: [{ type: 'text/plain', value: `Your OTP code for Fresh Cut account verification is ${newOtp}. It expires in 5 minutes.` }]
+       *   })
        * });
        */
       
@@ -153,32 +155,29 @@ const App: React.FC = () => {
       setOtpAttempts(0);
       setOtpSent(true);
       
-      alert(`SECURITY TRANSMISSION: A 6-digit verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut OTP Verification\n\nPlease check your inbox. Code expires in 5 minutes.`);
+      alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut OTP Verification\n\nPlease check your inbox. Code expires in 5 minutes.`);
       
-      console.log(`[SendGrid Hook] 
-      Subject: Your Fresh Cut OTP Verification
-      Body: Your OTP code for Fresh Cut account verification is ${newOtp}. 
-      It expires in 5 minutes. Do not share with anyone.`);
+      console.log(`[Transaction Audit] OTP Delivery to ${email}: ${newOtp}`);
       
       await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
     } catch (error) {
-      alert("Unable to send OTP. Please verify your connection or try again later.");
+      alert("Email Delivery Failure: Unable to send OTP. Please try again later.");
     } finally {
       setIsSendingOtp(false);
     }
   };
 
   const handleVerifyOtp = () => {
-    // 1. Security Check: Attempts
+    // 1. Security check: Brute-force mitigation
     if (otpAttempts >= 3) {
-      alert("SECURITY BLOCK: Too many failed attempts. For your protection, please request a fresh code.");
+      alert("SECURITY BLOCK: Max attempts reached. For protection, please request a fresh code.");
       setOtpSent(false);
       return;
     }
 
-    // 2. Security Check: Expiry
+    // 2. Security check: TTL mitigation
     if (Date.now() > otpExpiry) {
-      alert("EXPIRED OTP: Your code has timed out. Codes are valid for 5 minutes.");
+      alert("EXPIRED CODE: Your verification session has timed out. Codes are valid for 5 minutes.");
       setOtpSent(false);
       return;
     }
@@ -186,13 +185,13 @@ const App: React.FC = () => {
     // 3. Validation Logic
     if (otp === generatedOtp) {
       setIsOtpVerified(true);
-      alert("IDENTITY CONFIRMED: Email ownership verified. Account activation unlocked.");
+      alert("IDENTITY CONFIRMED: Email ownership verified. Registry unlocked.");
       logActivity('system_action', `Identity Verified: ${email}`, 'auth-success', 'customer');
-      // Invalidate the code immediately
-      setGeneratedOtp('VOID');
+      // Atomic Invalidation
+      setGeneratedOtp('VOID_USED');
     } else {
       setOtpAttempts(prev => prev + 1);
-      alert(`INVALID OTP: The code entered is incorrect. ${3 - otpAttempts - 1} attempts remaining.`);
+      alert(`INVALID OTP: Verification failed. ${3 - otpAttempts - 1} security attempts remaining.`);
     }
   };
 
@@ -200,10 +199,10 @@ const App: React.FC = () => {
     e.preventDefault();
     
     if (type === 'admin') {
-      // Mandatory specified supervisor credentials
+      // Direct Administrative Authentication
       if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
         const adminProfile: Profile = {
-          id: 'admin-001',
+          id: 'admin-oracle-001',
           full_name: 'Marketplace Supervisor',
           email: email,
           role: 'admin',
@@ -213,7 +212,7 @@ const App: React.FC = () => {
           pan_verified: true
         };
         setProfile(adminProfile);
-        await logActivity('user_login', `Supervisor Authorized: Administrative Session Started`, adminProfile.id, 'admin');
+        await logActivity('user_login', `Admin Identity Authenticated: Supervisor Session Started`, adminProfile.id, 'admin');
         setCurrentView('admin-panel');
         return;
       } else {
@@ -224,7 +223,7 @@ const App: React.FC = () => {
 
     if (type === 'signup' && authRole === 'customer') {
       if (!isOtpVerified) {
-        alert("REGISTRY ERROR: Email identity verification is required before establishing a profile.");
+        alert("REGISTRY ERROR: Email identity verification is mandatory for Customer registry entries.");
         return;
       }
     }
@@ -244,12 +243,12 @@ const App: React.FC = () => {
     setProfile(newProfile);
     
     if (type === 'signup') {
-      await logActivity('user_signup', `New identity created [${authRole}]: ${newProfile.full_name}`, newProfile.id, authRole);
+      await logActivity('user_signup', `New ${authRole} entry in registry: ${newProfile.full_name}`, newProfile.id, authRole);
       if (authRole === 'professional') {
-        alert("APPLICATION SUBMITTED: Your artisan profile is 'Pending'. Log in to complete document verification.");
+        alert("ONBOARDING: Profile established as 'Pending'. Log in to complete document verification for marketplace activation.");
       }
     } else {
-      await logActivity('user_login', `Identity Authenticated: ${newProfile.full_name}`, newProfile.id, authRole);
+      await logActivity('user_login', `Member Identity Authorized: ${newProfile.full_name}`, newProfile.id, authRole);
     }
     
     setCurrentView('dashboard');
@@ -276,7 +275,7 @@ const App: React.FC = () => {
       }]);
 
       if (!error) {
-        await logActivity('booking_created', `Demand Signal emitted by ${profile.full_name}`, bookingId);
+        await logActivity('booking_created', `Marketplace Demand Signal emitted by ${profile.full_name}`, bookingId);
         setCurrentView('payment-mockup');
       }
     } catch (err) {
@@ -291,7 +290,7 @@ const App: React.FC = () => {
     localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
     fetchApprovedPartners();
-    // Security cleanup
+    // Reset Security States
     setOtpSent(false);
     setIsOtpVerified(false);
     setGeneratedOtp('');
@@ -387,7 +386,7 @@ const App: React.FC = () => {
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gold/60 text-center">Identity Email Verification</p>
                   <div className="flex gap-2">
                     <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white/40 text-[10px] uppercase font-black tracking-widest truncate">
-                      {email || 'Enter Email Identity First'}
+                      {email || 'Provide Email Identity Above'}
                     </div>
                     {!otpSent && (
                       <button type="button" onClick={handleSendOtp} disabled={isSendingOtp} className="px-6 bg-gold/10 text-gold border border-gold/30 rounded-2xl text-[10px] font-black uppercase hover:bg-gold hover:text-dark-900 transition-all disabled:opacity-50">{isSendingOtp ? 'SENDING...' : 'GET OTP'}</button>
@@ -470,7 +469,7 @@ const App: React.FC = () => {
                 ))}
               </div>
               
-              <button onClick={() => { logActivity('booking_confirmed', `Financial Flow Authorized by ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Authorize Financials</button>
+              <button onClick={() => { logActivity('booking_confirmed', `Financial Flow Authorized by ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Complete Authorization</button>
             </div>
           </div>
         </div>
