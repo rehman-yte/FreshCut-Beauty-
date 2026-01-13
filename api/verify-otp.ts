@@ -1,0 +1,63 @@
+import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
+
+const supabase = createClient(
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || ''
+);
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'Email and verification code are required.' });
+  }
+
+  try {
+    // 1. Fetch the stored OTP record
+    const { data: record, error: fetchError } = await supabase
+      .from('otps')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (fetchError || !record) {
+      return res.status(400).json({ error: 'No active verification session found for this email.' });
+    }
+
+    // 2. Check for too many failed attempts
+    if (record.attempts >= 3) {
+      return res.status(403).json({ error: 'Max verification attempts reached. Please request a new code.' });
+    }
+
+    // 3. Check for expiration
+    if (new Date() > new Date(record.expires_at)) {
+      return res.status(400).json({ error: 'The verification code has expired (5-minute limit).' });
+    }
+
+    // 4. Verify hashed OTP
+    const hashedInput = crypto.createHash('sha256').update(otp).digest('hex');
+    
+    if (hashedInput === record.code_hash) {
+      // Success: Delete the OTP record to prevent reuse
+      await supabase.from('otps').delete().eq('email', email);
+      return res.status(200).json({ verified: true });
+    } else {
+      // Failure: Increment the attempt counter
+      await supabase
+        .from('otps')
+        .update({ attempts: record.attempts + 1 })
+        .eq('email', email);
+      
+      return res.status(400).json({ 
+        error: 'Incorrect verification code.', 
+        remaining: 3 - (record.attempts + 1) 
+      });
+    }
+  } catch (error: any) {
+    console.error('OTP Verification Error:', error);
+    return res.status(500).json({ error: 'Internal verification system error.' });
+  }
+}

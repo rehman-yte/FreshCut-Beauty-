@@ -37,9 +37,6 @@ const App: React.FC = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [generatedOtp, setGeneratedOtp] = useState<string>('');
-  const [otpExpiry, setOtpExpiry] = useState<number>(0);
-  const [otpAttempts, setOtpAttempts] = useState<number>(0);
   const [authRole, setAuthRole] = useState<UserRole>('customer');
 
   useEffect(() => {
@@ -119,7 +116,6 @@ const App: React.FC = () => {
   };
 
   const handleSendOtp = async () => {
-    // 1. Validate Email Presence
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       alert("VERIFICATION ERROR: A valid email address is required to receive your security code.");
@@ -129,70 +125,52 @@ const App: React.FC = () => {
     setIsSendingOtp(true);
     
     try {
-      // 2. Generate Secure 6-Digit OTP
-      const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiryTime = Date.now() + 5 * 60 * 1000; // Strict 5-Minute Expiry
-      
-      /**
-       * PRODUCTION BACKEND EMAIL TRIGGER:
-       * 
-       * await supabase.functions.invoke('send-secure-otp', {
-       *   body: { 
-       *     to: email, 
-       *     otp: newOtp,
-       *     subject: "Your Fresh Cut Beauty Verification Code",
-       *     message: `Your OTP code for Fresh Cut account verification is ${newOtp}. It expires in 5 minutes. Do not share with anyone.`
-       *   }
-       * });
-       */
-      
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      setGeneratedOtp(newOtp);
-      setOtpExpiry(expiryTime);
-      setOtpAttempts(0);
-      setOtpSent(true);
-      
-      alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut Beauty Verification Code\n\nPlease check your inbox. Code expires in 5 minutes.`);
-      
-      console.log(`[SMTP Secure Audit] 
-      Recipient: ${email}
-      Subject: Your Fresh Cut Beauty Verification Code
-      Body: Your OTP for Fresh Cut account verification is: ${newOtp}. It expires in 5 minutes. Do not share with anyone.`);
-      
-      await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
+      const response = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setOtpSent(true);
+        alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut OTP Verification\n\nPlease check your inbox. Code expires in 5 minutes.`);
+        await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
+      } else {
+        alert(`Error: ${result.error || 'Failed to send OTP'}`);
+      }
     } catch (error) {
-      alert("Email Delivery Failure: Unable to send OTP. Please try again later.");
+      alert("Network Error: Unable to reach verification server. Ensure API endpoints are correctly deployed on Vercel.");
     } finally {
       setIsSendingOtp(false);
     }
   };
 
-  const handleVerifyOtp = () => {
-    // 1. Brute-force mitigation
-    if (otpAttempts >= 3) {
-      alert("SECURITY BLOCK: Max attempts reached. For protection, please request a fresh code.");
-      setOtpSent(false);
+  const handleVerifyOtp = async () => {
+    if (!otp || otp.length < 6) {
+      alert("Please enter the 6-digit verification code.");
       return;
     }
 
-    // 2. TTL mitigation
-    if (Date.now() > otpExpiry) {
-      alert("EXPIRED CODE: Your verification code has timed out. Codes are valid for 5 minutes.");
-      setOtpSent(false);
-      return;
-    }
+    try {
+      const response = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp })
+      });
 
-    // 3. Validation
-    if (otp === generatedOtp) {
-      setIsOtpVerified(true);
-      alert("IDENTITY CONFIRMED: Email ownership verified. Registry unlocked.");
-      logActivity('system_action', `Identity Verified via Email: ${email}`, 'auth-success', 'customer');
-      // Atomic Invalidation
-      setGeneratedOtp('VOIDED');
-    } else {
-      setOtpAttempts(prev => prev + 1);
-      alert(`INVALID OTP: The code provided is incorrect or expired. ${3 - otpAttempts - 1} security attempts remaining.`);
+      const result = await response.json();
+
+      if (response.ok && result.verified) {
+        setIsOtpVerified(true);
+        alert("IDENTITY CONFIRMED: Email ownership verified. Registry unlocked.");
+        logActivity('system_action', `Identity Verified: ${email}`, 'auth-success', 'customer');
+      } else {
+        alert(`INVALID OTP: ${result.error || 'Verification failed.'}`);
+      }
+    } catch (error) {
+      alert("Verification Protocol Error. Please try again.");
     }
   };
 
@@ -202,7 +180,7 @@ const App: React.FC = () => {
     if (type === 'admin') {
       if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
         const adminProfile: Profile = {
-          id: 'admin-001',
+          id: 'admin-oracle-001',
           full_name: 'Marketplace Supervisor',
           email: email,
           role: 'admin',
@@ -212,7 +190,7 @@ const App: React.FC = () => {
           pan_verified: true
         };
         setProfile(adminProfile);
-        await logActivity('user_login', `Supervisor Authorized: Administrative Session Started`, adminProfile.id, 'admin');
+        await logActivity('user_login', `Admin Identity Authenticated: Supervisor Session Started`, adminProfile.id, 'admin');
         setCurrentView('admin-panel');
         return;
       } else {
@@ -293,7 +271,6 @@ const App: React.FC = () => {
     // Security cleanup
     setOtpSent(false);
     setIsOtpVerified(false);
-    setGeneratedOtp('');
     setOtp('');
     setMobile('');
     setEmail('');
