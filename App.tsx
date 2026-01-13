@@ -57,13 +57,21 @@ const App: React.FC = () => {
         const savedView = localStorage.getItem('freshcut_view_state');
         
         if (savedProfile) {
-          const parsed = JSON.parse(savedProfile);
-          setProfile(parsed);
-          if (savedView && !['login', 'signup'].includes(savedView)) {
-            setCurrentView(savedView as AppView);
+          try {
+            const parsed = JSON.parse(savedProfile);
+            if (parsed && parsed.id) {
+              setProfile(parsed);
+              if (savedView && !['login', 'signup'].includes(savedView)) {
+                setCurrentView(savedView as AppView);
+              }
+            }
+          } catch (e) {
+            localStorage.removeItem('freshcut_session');
           }
         }
         await fetchApprovedPartners();
+      } catch (err) {
+        console.error("Initialization error:", err);
       } finally {
         setIsLoading(false);
       }
@@ -86,38 +94,46 @@ const App: React.FC = () => {
   }, [profile, currentView, isLoading]);
 
   const fetchApprovedPartners = async () => {
-    const { data, error } = await supabase
-      .from('partners')
-      .select('*')
-      .eq('status', 'approved');
+    try {
+      const { data, error } = await supabase
+        .from('partners')
+        .select('*')
+        .eq('status', 'approved');
 
-    if (!error && data) {
-      const mapped: Professional[] = data.map((p: any) => ({
-        id: p.id,
-        name: p.shop_name,
-        bio: p.services,
-        image_url: p.category === 'gents' 
-          ? 'https://images.unsplash.com/photo-1605497746444-ac961d1349a2?auto=format&fit=crop&q=80'
-          : 'https://images.unsplash.com/photo-1595152772835-219674b2a8a6?auto=format&fit=crop&q=80',
-        specialties: p.services.split(','),
-        category: p.category,
-        is_online: p.is_online ?? true,
-        location_city: p.city,
-        status: p.status,
-        trust_score: 95,
-        owner_id: p.owner_id || ''
-      }));
-      setApprovedPartners(mapped);
+      if (!error && data) {
+        const mapped: Professional[] = data.map((p: any) => ({
+          id: p.id,
+          name: p.shop_name,
+          bio: p.services,
+          image_url: p.category === 'gents' 
+            ? 'https://images.unsplash.com/photo-1605497746444-ac961d1349a2?auto=format&fit=crop&q=80'
+            : 'https://images.unsplash.com/photo-1595152772835-219674b2a8a6?auto=format&fit=crop&q=80',
+          specialties: p.services.split(','),
+          category: p.category,
+          is_online: p.is_online ?? true,
+          location_city: p.city,
+          status: p.status,
+          trust_score: 95,
+          owner_id: p.owner_id || ''
+        }));
+        setApprovedPartners(mapped);
+      }
+    } catch (e) {
+      console.error("Partner fetch failed:", e);
     }
   };
 
   const logActivity = async (action: string, details: string) => {
-    await supabase.from('notifications').insert([{
-      type: 'activity_log',
-      actor_role: profile?.role || 'anonymous',
-      message: `${profile?.full_name || 'System'}: ${action} - ${details}`,
-      is_read: false
-    }]);
+    try {
+      await supabase.from('notifications').insert([{
+        type: 'activity_log',
+        actor_role: profile?.role || 'anonymous',
+        message: `${profile?.full_name || 'System'}: ${action} - ${details}`,
+        is_read: false
+      }]);
+    } catch (e) {
+      console.warn("Activity logging failed", e);
+    }
   };
 
   const sendOtpChallenge = async (e: React.FormEvent) => {
@@ -129,8 +145,15 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      const data = await response.json();
-      if (data.success) {
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        throw new Error("Server communication failure (Invalid JSON).");
+      }
+
+      if (response.ok && data.success) {
         setAuthStep('otp');
         logActivity('OTP_CHALLENGE', `Email identity challenged: ${email}`);
       } else {
@@ -152,22 +175,32 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp: enteredOtp }),
       });
-      const data = await response.json();
-      if (data.success) {
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        throw new Error("Server verification failure (Invalid JSON).");
+      }
+
+      if (response.ok && data.success) {
+        // Enforce admin role for specified email
+        const finalRole = email.toLowerCase() === 'rhfarooqui16@gmail.com' ? 'admin' : authRole;
+        
         const newProfile: Profile = {
           id: 'usr-' + Date.now(),
-          full_name: fullName || 'Verified Member',
+          full_name: fullName || (finalRole === 'admin' ? 'Marketplace Oracle' : 'Verified Member'),
           email,
-          role: authRole,
-          status: authRole === 'professional' ? 'draft' : 'active',
+          role: finalRole,
+          status: finalRole === 'professional' ? 'draft' : 'active',
           otp_verified: true,
           email_verified: true,
-          pan_verified: false
+          pan_verified: finalRole === 'admin'
         };
         setProfile(newProfile);
-        setCurrentView('dashboard');
+        setCurrentView(finalRole === 'admin' ? 'admin-panel' : 'dashboard');
         setAuthStep('info');
-        logActivity('AUTH_SUCCESS', `${email} successfully established session.`);
+        logActivity('AUTH_SUCCESS', `${email} successfully established session as ${finalRole}.`);
       } else {
         throw new Error(data.error || 'Invalid verification hash.');
       }
@@ -180,7 +213,7 @@ const App: React.FC = () => {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
+    if (email.toLowerCase() === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
       const adminProfile: Profile = {
         id: 'admin-001',
         full_name: 'Marketplace Oracle',
@@ -193,9 +226,10 @@ const App: React.FC = () => {
       };
       setProfile(adminProfile);
       setCurrentView('admin-panel');
+      setAuthStep('info');
       logActivity('ADMIN_ACCESS', 'High-clearance supervisor accessed Oracle terminal.');
     } else {
-      alert("Unauthorized: Clearance level insufficient.");
+      alert("Unauthorized: Clearance level insufficient or credentials incorrect.");
     }
   };
 
@@ -211,7 +245,10 @@ const App: React.FC = () => {
     if (protectedViews.includes(view) && !profile) {
       setCurrentView('login');
     } else {
-      if (view === 'admin-panel' && profile?.role !== 'admin') return;
+      if (view === 'admin-panel' && profile?.role !== 'admin') {
+        setCurrentView('home');
+        return;
+      };
       setCurrentView(view as AppView);
       if (view === 'home') fetchApprovedPartners();
     }
@@ -223,6 +260,14 @@ const App: React.FC = () => {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-dark-900 flex items-center justify-center">
+        <div className="w-12 h-12 border-2 border-gold border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-dark-900 text-white selection:bg-gold selection:text-dark-900 flex flex-col">
