@@ -125,7 +125,9 @@ const App: React.FC = () => {
     setIsSendingOtp(true);
     
     try {
-      const response = await fetch('/api/send-otp', {
+      // Use absolute path to ensure correct endpoint resolution on Vercel
+      const apiUrl = `${window.location.origin}/api/send-otp`;
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -140,8 +142,9 @@ const App: React.FC = () => {
       } else {
         alert(`Verification Gateway Error: ${result.error || 'Server responded with an error.'}`);
       }
-    } catch (error) {
-      alert("Connectivity Error: Unable to reach the verification server.");
+    } catch (error: any) {
+      console.error("OTP Connection Error:", error);
+      alert(`Connectivity Error: ${error.message || 'Unable to reach the verification server.'}. Please ensure your Vercel functions are deployed and SMTP is configured.`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -154,7 +157,8 @@ const App: React.FC = () => {
     }
 
     try {
-      const response = await fetch('/api/verify-otp', {
+      const apiUrl = `${window.location.origin}/api/verify-otp`;
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp })
@@ -169,8 +173,9 @@ const App: React.FC = () => {
       } else {
         alert(`INVALID OTP: ${result.error || 'Verification rejected.'}`);
       }
-    } catch (error) {
-      alert("Identity Verification Timeout.");
+    } catch (error: any) {
+      console.error("OTP Verification Connection Error:", error);
+      alert(`Identity Verification Timeout or Network Error: ${error.message}`);
     }
   };
 
