@@ -18,7 +18,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
   const [pendingVerifications, setPendingVerifications] = useState<Profile[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [logs, setLogs] = useState<ActivityNotification[]>([]);
-  const [stats, setStats] = useState({ revenue: 0, pending: 0, verif_pending: 0 });
+  const [stats, setStats] = useState({ revenue: 0, pending: 0, verif_pending: 0, verified_customers: 0 });
 
   useEffect(() => {
     fetchEverything();
@@ -43,14 +43,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
     setStats({
       revenue: (bs || []).filter(b => b.status === 'completed').length * 1048,
       pending: (ps || []).filter(p => p.status === 'pending').length,
-      verif_pending: us?.filter(u => u.role === 'professional' && u.status === 'pending').length || 0
+      verif_pending: us?.filter(u => u.role === 'professional' && u.status === 'pending').length || 0,
+      verified_customers: us?.filter(u => u.role === 'customer' && u.otp_verified).length || 0
     });
   };
 
   const handleApproval = async (id: string, status: 'approved' | 'rejected') => {
-    // Approve the partner profile and set the corresponding professional status
     await supabase.from('profiles').update({ status: status === 'approved' ? 'active' : 'suspended', pan_verified: status === 'approved' }).eq('id', id);
-    // Find the partner entry for this owner and update it
     await supabase.from('partners').update({ status }).eq('owner_id', id);
     
     await supabase.from('notifications').insert([{
@@ -76,11 +75,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
     <div className="min-h-screen bg-dark-900 pt-32 pb-20 px-4">
       <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8">
         <aside className="lg:w-72 glass p-6 rounded-[2.5rem] border border-white/10 h-fit">
-          <h3 className="text-gold text-[10px] font-black tracking-[0.4em] uppercase mb-8 px-2">Curation Hub</h3>
+          <h3 className="text-gold text-[10px] font-black tracking-[0.4em] uppercase mb-8 px-2">Marketplace Oracle</h3>
           <nav className="space-y-1.5">
             <NavItem id="overview" label="Intelligence" />
             <NavItem id="verifications" label="Document Audit" />
-            <NavItem id="providers" label="Marketplace Supply" />
+            <NavItem id="providers" label="Supply Registry" />
             <NavItem id="bookings" label="Demand Stream" />
             <NavItem id="logs" label="Audit Trail" />
           </nav>
@@ -88,18 +87,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
 
         <div className="flex-1 animate-fadeIn">
           {activeSection === 'overview' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="glass p-10 rounded-[2.5rem] border border-gold/10">
-                <span className="text-[10px] font-black uppercase tracking-widest text-white/30 block mb-2">Platform GMV</span>
-                <span className="text-4xl font-serif font-black gold-gradient">₹{stats.revenue.toLocaleString()}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="glass p-8 rounded-[2rem] border border-gold/10">
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">GMV Potential</span>
+                <span className="text-3xl font-serif font-black gold-gradient">₹{stats.revenue.toLocaleString()}</span>
               </div>
-              <div className="glass p-10 rounded-[2.5rem] border border-gold/10">
-                <span className="text-[10px] font-black uppercase tracking-widest text-white/30 block mb-2">Verified Units</span>
-                <span className="text-4xl font-serif font-black text-gold">{allProviders.filter(p => p.status === 'approved').length}</span>
+              <div className="glass p-8 rounded-[2rem] border border-gold/10">
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">Verified Members</span>
+                <span className="text-3xl font-serif font-black text-gold">{stats.verified_customers}</span>
               </div>
-              <div className="glass p-10 rounded-[2.5rem] border border-gold/10">
-                <span className="text-[10px] font-black uppercase tracking-widest text-white/30 block mb-2">Audit Queue</span>
-                <span className="text-4xl font-serif font-black text-white">{stats.verif_pending}</span>
+              <div className="glass p-8 rounded-[2rem] border border-gold/10">
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">Artisan Supply</span>
+                <span className="text-3xl font-serif font-black text-white">{allProviders.filter(p => p.status === 'approved').length}</span>
+              </div>
+              <div className="glass p-8 rounded-[2rem] border border-gold/10">
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">Audit Queue</span>
+                <span className="text-3xl font-serif font-black text-red-500">{stats.verif_pending}</span>
               </div>
             </div>
           )}
@@ -108,32 +111,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
             <div className="space-y-6">
               {pendingVerifications.length === 0 ? (
                 <div className="py-24 text-center glass rounded-[2.5rem] border border-dashed border-white/10">
-                  <p className="text-white/20 text-xs font-black uppercase tracking-widest">Verification queue clear.</p>
+                  <p className="text-white/20 text-xs font-black uppercase tracking-widest italic">Artisan Registry Audit Clear.</p>
                 </div>
               ) : (
                 pendingVerifications.map(u => (
                   <div key={u.id} className="glass p-10 rounded-[2.5rem] border border-white/10 flex flex-col md:flex-row justify-between gap-10">
                     <div className="flex-1">
                       <h4 className="text-2xl font-serif font-black gold-gradient mb-2">{u.full_name}</h4>
-                      <p className="text-[10px] text-white/40 uppercase mb-6 tracking-widest">ID: {u.id}</p>
+                      <p className="text-[10px] text-white/40 uppercase mb-6 tracking-widest">Digital ID: {u.id}</p>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                          <p className="text-[8px] font-black text-white/20 uppercase mb-2">PAN Card Snapshot</p>
+                          <p className="text-[8px] font-black text-white/20 uppercase mb-2">PAN Document</p>
                           <div className="h-32 bg-white/10 rounded-xl flex items-center justify-center">
-                            <span className="text-[8px] uppercase tracking-widest">View Image</span>
+                            <span className="text-[8px] uppercase tracking-widest text-white/20">Snapshot Attached</span>
                           </div>
                         </div>
                         <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                          <p className="text-[8px] font-black text-white/20 uppercase mb-2">Shop Presence</p>
+                          <p className="text-[8px] font-black text-white/20 uppercase mb-2">Facility Visuals</p>
                           <div className="h-32 bg-white/10 rounded-xl flex items-center justify-center">
-                            <span className="text-[8px] uppercase tracking-widest">View Image</span>
+                            <span className="text-[8px] uppercase tracking-widest text-white/20">Interior Clear</span>
                           </div>
                         </div>
                       </div>
                     </div>
                     <div className="flex md:flex-col justify-end gap-3 h-fit">
-                      <button onClick={() => handleApproval(u.id, 'approved')} className="px-8 py-4 bg-gold text-dark-900 text-[10px] font-black rounded-xl uppercase">Approve Entry</button>
-                      <button onClick={() => handleApproval(u.id, 'rejected')} className="px-8 py-4 border border-red-500/30 text-red-500 text-[10px] font-black rounded-xl uppercase hover:bg-red-500/10">Reject Entry</button>
+                      <button onClick={() => handleApproval(u.id, 'approved')} className="px-8 py-4 bg-gold text-dark-900 text-[10px] font-black rounded-xl uppercase shadow-lg shadow-gold/20 hover:scale-105 transition-all">Authorize Supply</button>
+                      <button onClick={() => handleApproval(u.id, 'rejected')} className="px-8 py-4 border border-red-500/30 text-red-500 text-[10px] font-black rounded-xl uppercase hover:bg-red-500/10 transition-all">Reject Entry</button>
                     </div>
                   </div>
                 ))
@@ -142,11 +145,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
           )}
 
           {activeSection === 'logs' && (
-            <div className="glass p-10 rounded-[2.5rem] border border-white/10 space-y-4">
+            <div className="glass p-10 rounded-[2.5rem] border border-white/10 space-y-4 max-h-[600px] overflow-y-auto">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4 mb-6">Structural Audit Stream</h4>
               {logs.map(log => (
-                <div key={log.id} className="p-5 border-b border-white/5 flex justify-between items-center text-xs">
-                  <p className="font-bold tracking-tight">{log.message}</p>
-                  <span className="text-[10px] text-white/20 uppercase">{new Date(log.created_at).toLocaleTimeString()}</span>
+                <div key={log.id} className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl flex justify-between items-center group hover:border-gold/30 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" />
+                    <p className="text-xs font-bold tracking-tight text-white/80 group-hover:text-white">{log.message}</p>
+                  </div>
+                  <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">{new Date(log.created_at).toLocaleTimeString()}</span>
                 </div>
               ))}
             </div>
