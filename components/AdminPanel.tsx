@@ -18,7 +18,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
   const [pendingVerifications, setPendingVerifications] = useState<Profile[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [logs, setLogs] = useState<ActivityNotification[]>([]);
-  const [stats, setStats] = useState({ revenue: 0, pending: 0, verif_pending: 0, verified_customers: 0 });
+  const [stats, setStats] = useState({ revenue: 0, pending: 0, verif_pending: 0, verified_wa: 0 });
 
   useEffect(() => {
     fetchEverything();
@@ -44,7 +44,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
       revenue: (bs || []).filter(b => b.status === 'completed').length * 1048,
       pending: (ps || []).filter(p => p.status === 'pending').length,
       verif_pending: us?.filter(u => u.role === 'professional' && u.status === 'pending').length || 0,
-      verified_customers: us?.filter(u => u.role === 'customer' && u.otp_verified).length || 0
+      verified_wa: us?.filter(u => u.role === 'customer' && u.otp_verified).length || 0
     });
   };
 
@@ -93,8 +93,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = () => {
                 <span className="text-3xl font-serif font-black gold-gradient">₹{stats.revenue.toLocaleString()}</span>
               </div>
               <div className="glass p-8 rounded-[2rem] border border-gold/10">
-                <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">Verified Members</span>
-                <span className="text-3xl font-serif font-black text-gold">{stats.verified_customers}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">WhatsApp Verified</span>
+                <span className="text-3xl font-serif font-black text-gold">{stats.verified_wa}</span>
               </div>
               <div className="glass p-8 rounded-[2rem] border border-gold/10">
                 <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">Artisan Supply</span>
