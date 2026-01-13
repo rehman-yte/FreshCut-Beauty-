@@ -119,7 +119,7 @@ const App: React.FC = () => {
   };
 
   const handleSendOtp = async () => {
-    // 1. Email Format Audit
+    // 1. Validate Email Presence
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       alert("VERIFICATION ERROR: A valid email address is required to receive your security code.");
@@ -134,17 +134,15 @@ const App: React.FC = () => {
       const expiryTime = Date.now() + 5 * 60 * 1000; // Strict 5-Minute Expiry
       
       /**
-       * PRODUCTION TRANSACTIONAL FLOW (SendGrid / Supabase Edge Functions):
+       * PRODUCTION BACKEND EMAIL TRIGGER:
        * 
-       * await fetch('https://api.sendgrid.com/v3/mail/send', {
-       *   method: 'POST',
-       *   headers: { 'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`, 'Content-Type': 'application/json' },
-       *   body: JSON.stringify({
-       *     personalizations: [{ to: [{ email }] }],
-       *     from: { email: 'noreply@freshcut.com' },
-       *     subject: "Your Fresh Cut OTP Verification",
-       *     content: [{ type: 'text/plain', value: `Your OTP code for Fresh Cut account verification is ${newOtp}. It expires in 5 minutes.` }]
-       *   })
+       * await supabase.functions.invoke('send-secure-otp', {
+       *   body: { 
+       *     to: email, 
+       *     otp: newOtp,
+       *     subject: "Your Fresh Cut Beauty Verification Code",
+       *     message: `Your OTP code for Fresh Cut account verification is ${newOtp}. It expires in 5 minutes. Do not share with anyone.`
+       *   }
        * });
        */
       
@@ -155,9 +153,12 @@ const App: React.FC = () => {
       setOtpAttempts(0);
       setOtpSent(true);
       
-      alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut OTP Verification\n\nPlease check your inbox. Code expires in 5 minutes.`);
+      alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut Beauty Verification Code\n\nPlease check your inbox. Code expires in 5 minutes.`);
       
-      console.log(`[Transaction Audit] OTP Delivery to ${email}: ${newOtp}`);
+      console.log(`[SMTP Secure Audit] 
+      Recipient: ${email}
+      Subject: Your Fresh Cut Beauty Verification Code
+      Body: Your OTP for Fresh Cut account verification is: ${newOtp}. It expires in 5 minutes. Do not share with anyone.`);
       
       await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
     } catch (error) {
@@ -168,30 +169,30 @@ const App: React.FC = () => {
   };
 
   const handleVerifyOtp = () => {
-    // 1. Security check: Brute-force mitigation
+    // 1. Brute-force mitigation
     if (otpAttempts >= 3) {
       alert("SECURITY BLOCK: Max attempts reached. For protection, please request a fresh code.");
       setOtpSent(false);
       return;
     }
 
-    // 2. Security check: TTL mitigation
+    // 2. TTL mitigation
     if (Date.now() > otpExpiry) {
-      alert("EXPIRED CODE: Your verification session has timed out. Codes are valid for 5 minutes.");
+      alert("EXPIRED CODE: Your verification code has timed out. Codes are valid for 5 minutes.");
       setOtpSent(false);
       return;
     }
 
-    // 3. Validation Logic
+    // 3. Validation
     if (otp === generatedOtp) {
       setIsOtpVerified(true);
       alert("IDENTITY CONFIRMED: Email ownership verified. Registry unlocked.");
-      logActivity('system_action', `Identity Verified: ${email}`, 'auth-success', 'customer');
+      logActivity('system_action', `Identity Verified via Email: ${email}`, 'auth-success', 'customer');
       // Atomic Invalidation
-      setGeneratedOtp('VOID_USED');
+      setGeneratedOtp('VOIDED');
     } else {
       setOtpAttempts(prev => prev + 1);
-      alert(`INVALID OTP: Verification failed. ${3 - otpAttempts - 1} security attempts remaining.`);
+      alert(`INVALID OTP: The code provided is incorrect or expired. ${3 - otpAttempts - 1} security attempts remaining.`);
     }
   };
 
@@ -199,10 +200,9 @@ const App: React.FC = () => {
     e.preventDefault();
     
     if (type === 'admin') {
-      // Direct Administrative Authentication
       if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
         const adminProfile: Profile = {
-          id: 'admin-oracle-001',
+          id: 'admin-001',
           full_name: 'Marketplace Supervisor',
           email: email,
           role: 'admin',
@@ -212,11 +212,11 @@ const App: React.FC = () => {
           pan_verified: true
         };
         setProfile(adminProfile);
-        await logActivity('user_login', `Admin Identity Authenticated: Supervisor Session Started`, adminProfile.id, 'admin');
+        await logActivity('user_login', `Supervisor Authorized: Administrative Session Started`, adminProfile.id, 'admin');
         setCurrentView('admin-panel');
         return;
       } else {
-        alert("AUTHORIZATION FAILED: Invalid administrative credentials.");
+        alert("ACCESS DENIED: Invalid administrative credentials.");
         return;
       }
     }
@@ -290,7 +290,7 @@ const App: React.FC = () => {
     localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
     fetchApprovedPartners();
-    // Reset Security States
+    // Security cleanup
     setOtpSent(false);
     setIsOtpVerified(false);
     setGeneratedOtp('');
@@ -386,7 +386,7 @@ const App: React.FC = () => {
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gold/60 text-center">Identity Email Verification</p>
                   <div className="flex gap-2">
                     <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white/40 text-[10px] uppercase font-black tracking-widest truncate">
-                      {email || 'Provide Email Identity Above'}
+                      {email || 'Enter Email Identity Above'}
                     </div>
                     {!otpSent && (
                       <button type="button" onClick={handleSendOtp} disabled={isSendingOtp} className="px-6 bg-gold/10 text-gold border border-gold/30 rounded-2xl text-[10px] font-black uppercase hover:bg-gold hover:text-dark-900 transition-all disabled:opacity-50">{isSendingOtp ? 'SENDING...' : 'GET OTP'}</button>
