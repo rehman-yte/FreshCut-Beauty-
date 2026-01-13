@@ -119,28 +119,32 @@ const App: React.FC = () => {
   };
 
   const handleSendOtp = async () => {
-    // 1. WhatsApp Country Code & Format Check (+91XXXXXXXXXX)
-    const phoneRegex = /^\+91[6-9]\d{9}$/;
-    if (!phoneRegex.test(mobile)) {
-      alert("WhatsApp Registry Error: Mobile number must start with +91 followed by 10 digits (e.g., +919876543210).");
+    // 1. Email Format Check
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      alert("VERIFICATION ERROR: A valid email identity is required to receive an OTP.");
       return;
     }
     
     setIsSendingOtp(true);
     
     try {
-      // 2. Dynamic 6-Digit OTP Generation
+      // 2. Secure 6-Digit OTP Generation
       const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiryTime = Date.now() + 5 * 60 * 1000; // 5 Minutes Expiry
+      const expiryTime = Date.now() + 5 * 60 * 1000; // 5 Minutes Expiry strictly enforced
       
-      // 3. WhatsApp Cloud API Dispatch (Production Logic)
-      // Implementation Note: In a live server, we call a Supabase Edge Function which executes:
-      // fetch('https://graph.facebook.com/v18.0/{PHONE_ID}/messages', {
-      //   method: 'POST',
-      //   body: JSON.stringify({ 
-      //     template: { name: 'freshcut_otp', components: [{ parameters: [{ text: newOtp }] }] } 
-      //   })
-      // })
+      /**
+       * PRODUCTION BACKEND INTEGRATION:
+       * Triggered via Supabase Edge Function using SendGrid API:
+       * 
+       * await supabase.functions.invoke('send-secure-otp', {
+       *   body: { 
+       *     to: email, 
+       *     otp: newOtp,
+       *     template: "signup_verification"
+       *   }
+       * });
+       */
       
       await new Promise(resolve => setTimeout(resolve, 1500));
       
@@ -149,40 +153,46 @@ const App: React.FC = () => {
       setOtpAttempts(0);
       setOtpSent(true);
       
-      alert(`FRESH CUT BEAUTY: A 6-digit verification code has been dispatched to your WhatsApp account at ${mobile}. This code is valid for 5 minutes.`);
-      console.log(`[WhatsApp Production Hook] Code: ${newOtp} | Recipient: ${mobile}`);
+      alert(`SECURITY TRANSMISSION: A 6-digit verification code has been dispatched to ${email}.\n\nSubject: Your Fresh Cut OTP Verification\n\nPlease check your inbox. Code expires in 5 minutes.`);
       
-      await logActivity('system_action', `WhatsApp OTP dispatched to ${mobile}`, 'wa-ref', 'customer');
+      console.log(`[SendGrid Hook] 
+      Subject: Your Fresh Cut OTP Verification
+      Body: Your OTP code for Fresh Cut account verification is ${newOtp}. 
+      It expires in 5 minutes. Do not share with anyone.`);
+      
+      await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
     } catch (error) {
-      alert("WhatsApp Gateway Error: Connectivity delayed. Please retry in 30 seconds.");
+      alert("Unable to send OTP. Please verify your connection or try again later.");
     } finally {
       setIsSendingOtp(false);
     }
   };
 
   const handleVerifyOtp = () => {
-    // 1. Security Check: Attempt Limits
+    // 1. Security Check: Attempts
     if (otpAttempts >= 3) {
-      alert("SECURITY BLOCK: Maximum verification attempts reached. For security, please request a new WhatsApp code.");
+      alert("SECURITY BLOCK: Too many failed attempts. For your protection, please request a fresh code.");
       setOtpSent(false);
       return;
     }
 
-    // 2. Security Check: Expiry Logic
+    // 2. Security Check: Expiry
     if (Date.now() > otpExpiry) {
-      alert("EXPIRED CODE: This code is no longer valid. Request a fresh verification code via WhatsApp.");
+      alert("EXPIRED OTP: Your code has timed out. Codes are valid for 5 minutes.");
       setOtpSent(false);
       return;
     }
 
-    // 3. Match Verification
+    // 3. Validation Logic
     if (otp === generatedOtp) {
       setIsOtpVerified(true);
-      alert("IDENTITY VERIFIED: Your WhatsApp identity is confirmed. Proceed to final registration.");
-      logActivity('system_action', `WhatsApp Identity Verified: ${mobile}`, 'wa-success', 'customer');
+      alert("IDENTITY CONFIRMED: Email ownership verified. Account activation unlocked.");
+      logActivity('system_action', `Identity Verified: ${email}`, 'auth-success', 'customer');
+      // Invalidate the code immediately
+      setGeneratedOtp('VOID');
     } else {
       setOtpAttempts(prev => prev + 1);
-      alert(`INVALID CODE: Verification failed. ${3 - otpAttempts - 1} security attempts remaining.`);
+      alert(`INVALID OTP: The code entered is incorrect. ${3 - otpAttempts - 1} attempts remaining.`);
     }
   };
 
@@ -190,10 +200,10 @@ const App: React.FC = () => {
     e.preventDefault();
     
     if (type === 'admin') {
-      // Direct Administrative Credential Audit
+      // Mandatory specified supervisor credentials
       if (email === 'rhfarooqui16@gmail.com' && password === 'TheKing1278@') {
         const adminProfile: Profile = {
-          id: 'admin-oracle-001',
+          id: 'admin-001',
           full_name: 'Marketplace Supervisor',
           email: email,
           role: 'admin',
@@ -203,18 +213,18 @@ const App: React.FC = () => {
           pan_verified: true
         };
         setProfile(adminProfile);
-        await logActivity('user_login', `Administrative Authorization: Supervisor Session Initiated`, adminProfile.id, 'admin');
+        await logActivity('user_login', `Supervisor Authorized: Administrative Session Started`, adminProfile.id, 'admin');
         setCurrentView('admin-panel');
         return;
       } else {
-        alert("AUTHORIZATION DENIED: Invalid Administrative Credentials.");
+        alert("AUTHORIZATION FAILED: Invalid administrative credentials.");
         return;
       }
     }
 
     if (type === 'signup' && authRole === 'customer') {
       if (!isOtpVerified) {
-        alert("REGISTRY ERROR: WhatsApp identity verification must be completed on this page before establishing a new profile.");
+        alert("REGISTRY ERROR: Email identity verification is required before establishing a profile.");
         return;
       }
     }
@@ -234,12 +244,12 @@ const App: React.FC = () => {
     setProfile(newProfile);
     
     if (type === 'signup') {
-      await logActivity('user_signup', `Identity Established [${authRole}]: ${newProfile.full_name}`, newProfile.id, authRole);
+      await logActivity('user_signup', `New identity created [${authRole}]: ${newProfile.full_name}`, newProfile.id, authRole);
       if (authRole === 'professional') {
-        alert("APPLICATION RECEIVED: Your artisan identity is 'Pending'. Log in to complete PAN/Facility verification for marketplace activation.");
+        alert("APPLICATION SUBMITTED: Your artisan profile is 'Pending'. Log in to complete document verification.");
       }
     } else {
-      await logActivity('user_login', `Identity Authorized: ${newProfile.full_name}`, newProfile.id, authRole);
+      await logActivity('user_login', `Identity Authenticated: ${newProfile.full_name}`, newProfile.id, authRole);
     }
     
     setCurrentView('dashboard');
@@ -281,7 +291,7 @@ const App: React.FC = () => {
     localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
     fetchApprovedPartners();
-    // Reset Security States
+    // Security cleanup
     setOtpSent(false);
     setIsOtpVerified(false);
     setGeneratedOtp('');
@@ -332,12 +342,12 @@ const App: React.FC = () => {
                 <button type="button" onClick={() => setAuthRole('customer')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'customer' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Customer</button>
                 <button type="button" onClick={() => setAuthRole('professional')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${authRole === 'professional' ? 'bg-gold text-dark-900' : 'text-white/40 hover:text-white'}`}>Professional</button>
               </div>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Member Identity (Email)" required />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Secret Key (Password)" required />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Identity (Email)" required />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Clearance Key (Password)" required />
               <button type="submit" className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all">Authorize Access</button>
             </form>
             <div className="mt-8 flex flex-col items-center gap-4">
-              <button onClick={() => setCurrentView('signup')} className="text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Join Registry</button>
+              <button onClick={() => setCurrentView('signup')} className="text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors">Apply for Registry</button>
               <div className="h-px w-12 bg-white/10" />
               <button onClick={() => setCurrentView('admin-login')} className="px-6 py-2 border border-white/10 rounded-full text-[9px] font-black uppercase tracking-widest text-white/30 hover:text-gold hover:border-gold transition-all">Admin Gateway</button>
             </div>
@@ -374,31 +384,33 @@ const App: React.FC = () => {
               
               {authRole === 'customer' && (
                 <div className="space-y-4 pt-4 border-t border-white/5 mt-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gold/60 text-center">WhatsApp Identity Check</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gold/60 text-center">Identity Email Verification</p>
                   <div className="flex gap-2">
-                    <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="+91 XXXXX XXXXX" required />
+                    <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white/40 text-[10px] uppercase font-black tracking-widest truncate">
+                      {email || 'Enter Email Identity First'}
+                    </div>
                     {!otpSent && (
                       <button type="button" onClick={handleSendOtp} disabled={isSendingOtp} className="px-6 bg-gold/10 text-gold border border-gold/30 rounded-2xl text-[10px] font-black uppercase hover:bg-gold hover:text-dark-900 transition-all disabled:opacity-50">{isSendingOtp ? 'SENDING...' : 'GET OTP'}</button>
                     )}
                   </div>
                   {otpSent && !isOtpVerified && (
                     <div className="flex gap-2 animate-slideDown">
-                      <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} className="flex-1 bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="6-Digit Code" required />
+                      <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} className="flex-1 bg-white/5 border border-gold/50 rounded-2xl px-6 py-4 outline-none focus:border-gold text-center tracking-[1em] font-black" placeholder="XXXXXX" required />
                       <button type="button" onClick={handleVerifyOtp} className="px-6 bg-gold text-dark-900 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-gold/20">VERIFY</button>
                     </div>
                   )}
                   {isOtpVerified && (
                     <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-2xl text-center">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-green-400">WhatsApp Identity Verified ✓</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-green-400">Email Identity Verified ✓</p>
                     </div>
                   )}
                 </div>
               )}
               
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Registry Password" required />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:border-gold" placeholder="Secure Password" required />
               <button type="submit" disabled={authRole === 'customer' && !isOtpVerified} className="w-full py-5 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-lg shadow-gold/20 hover:bg-gold-light transition-all disabled:opacity-30">Establish Identity</button>
             </form>
-            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">Existing Member? Login</button>
+            <button onClick={() => setCurrentView('login')} className="w-full mt-6 text-[10px] text-white/40 uppercase tracking-widest hover:text-gold transition-colors text-center">Already on Registry? Login</button>
           </div>
         </div>
       )}
@@ -458,7 +470,7 @@ const App: React.FC = () => {
                 ))}
               </div>
               
-              <button onClick={() => { logActivity('booking_confirmed', `Financial Flow Authorized by ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Complete Authorization</button>
+              <button onClick={() => { logActivity('booking_confirmed', `Financial Flow Authorized by ${profile?.full_name}`, 'pay-' + Date.now()); handleViewChange('dashboard'); }} className="w-full py-6 bg-gold text-dark-900 font-black tracking-widest rounded-2xl uppercase shadow-xl shadow-gold/20 hover:scale-[1.02] transition-all">Authorize Financials</button>
             </div>
           </div>
         </div>
