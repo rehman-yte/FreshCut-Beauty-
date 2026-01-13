@@ -8,16 +8,19 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export default async function handler(req: any, res: any) {
+  // Always set content-type to application/json
+  res.setHeader('Content-Type', 'application/json');
+
   // Only allow POST requests
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   const { email } = req.body;
 
   // Basic email validation
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: 'A valid email identity is required.' });
+    return res.status(400).json({ success: false, error: 'A valid email identity is required.' });
   }
 
   try {
@@ -27,7 +30,6 @@ export default async function handler(req: any, res: any) {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes validity
 
     // 2. Persist OTP in Supabase 'otps' table
-    // Table Schema Requirement: email (primary key), code_hash (text), expires_at (timestamp), attempts (int, default 0)
     const { error: dbError } = await supabase
       .from('otps')
       .upsert({ 
@@ -76,6 +78,6 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch (error: any) {
     console.error('OTP Send Error:', error.message);
-    return res.status(500).json({ error: 'Failed to send verification email. Please verify SMTP settings.' });
+    return res.status(500).json({ success: false, error: `Backend Exception: ${error.message}` });
   }
 }

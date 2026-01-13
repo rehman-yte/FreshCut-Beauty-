@@ -7,12 +7,14 @@ const supabase = createClient(
 );
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  res.setHeader('Content-Type', 'application/json');
+  
+  if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
   const { email, otp } = req.body;
 
   if (!email || !otp) {
-    return res.status(400).json({ error: 'Email and verification code are required.' });
+    return res.status(400).json({ success: false, error: 'Email and verification code are required.' });
   }
 
   try {
@@ -24,17 +26,17 @@ export default async function handler(req: any, res: any) {
       .single();
 
     if (fetchError || !record) {
-      return res.status(400).json({ error: 'No active verification session found for this email.' });
+      return res.status(400).json({ success: false, error: 'No active verification session found for this email.' });
     }
 
     // 2. Check for too many failed attempts
     if (record.attempts >= 3) {
-      return res.status(403).json({ error: 'Max verification attempts reached. Please request a new code.' });
+      return res.status(403).json({ success: false, error: 'Max verification attempts reached. Please request a new code.' });
     }
 
     // 3. Check for expiration
     if (new Date() > new Date(record.expires_at)) {
-      return res.status(400).json({ error: 'The verification code has expired (5-minute limit).' });
+      return res.status(400).json({ success: false, error: 'The verification code has expired (5-minute limit).' });
     }
 
     // 4. Verify hashed OTP
@@ -43,7 +45,7 @@ export default async function handler(req: any, res: any) {
     if (hashedInput === record.code_hash) {
       // Success: Delete the OTP record to prevent reuse
       await supabase.from('otps').delete().eq('email', email);
-      return res.status(200).json({ verified: true });
+      return res.status(200).json({ verified: true, success: true });
     } else {
       // Failure: Increment the attempt counter
       await supabase
@@ -52,12 +54,13 @@ export default async function handler(req: any, res: any) {
         .eq('email', email);
       
       return res.status(400).json({ 
+        success: false,
         error: 'Incorrect verification code.', 
         remaining: 3 - (record.attempts + 1) 
       });
     }
   } catch (error: any) {
     console.error('OTP Verification Error:', error);
-    return res.status(500).json({ error: 'Internal verification system error.' });
+    return res.status(500).json({ success: false, error: `Internal verification system error: ${error.message}` });
   }
 }

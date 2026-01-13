@@ -115,6 +115,16 @@ const App: React.FC = () => {
     }
   };
 
+  const safeFetchJson = async (url: string, options: RequestInit) => {
+    const response = await fetch(url, options);
+    const text = await response.text();
+    try {
+      return { data: JSON.parse(text), ok: response.ok };
+    } catch (e) {
+      return { error: text || 'Non-JSON response received', ok: false };
+    }
+  };
+
   const handleSendOtp = async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -125,26 +135,23 @@ const App: React.FC = () => {
     setIsSendingOtp(true);
     
     try {
-      // Use absolute path to ensure correct endpoint resolution on Vercel
       const apiUrl = `${window.location.origin}/api/send-otp`;
-      const response = await fetch(apiUrl, {
+      const { data, error, ok } = await safeFetchJson(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
 
-      const result = await response.json();
-
-      if (response.ok) {
+      if (ok) {
         setOtpSent(true);
         alert(`SECURITY TRANSMISSION: A verification code has been dispatched to ${email}.`);
         await logActivity('system_action', `Identity OTP dispatched to ${email}`, 'email-auth', 'customer');
       } else {
-        alert(`Verification Gateway Error: ${result.error || 'Server responded with an error.'}`);
+        alert(`Verification Gateway Error: ${error || data?.error || 'Server responded with an error.'}`);
       }
     } catch (error: any) {
       console.error("OTP Connection Error:", error);
-      alert(`Connectivity Error: ${error.message || 'Unable to reach the verification server.'}. Please ensure your Vercel functions are deployed and SMTP is configured.`);
+      alert(`Connectivity Error: ${error.message || 'Unable to reach the verification server.'}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -158,20 +165,18 @@ const App: React.FC = () => {
 
     try {
       const apiUrl = `${window.location.origin}/api/verify-otp`;
-      const response = await fetch(apiUrl, {
+      const { data, error, ok } = await safeFetchJson(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp })
       });
 
-      const result = await response.json();
-
-      if (response.ok && result.verified) {
+      if (ok && data.verified) {
         setIsOtpVerified(true);
         alert("IDENTITY CONFIRMED: Email ownership verified.");
         logActivity('system_action', `Identity Verified: ${email}`, 'auth-success', 'customer');
       } else {
-        alert(`INVALID OTP: ${result.error || 'Verification rejected.'}`);
+        alert(`INVALID OTP: ${error || data?.error || 'Verification rejected.'}`);
       }
     } catch (error: any) {
       console.error("OTP Verification Connection Error:", error);
