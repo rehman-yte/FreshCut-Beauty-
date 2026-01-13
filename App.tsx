@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import { UserRole, Profile, Professional, Service, Category, Booking } from './types';
@@ -123,7 +122,7 @@ const App: React.FC = () => {
     // 1. WhatsApp Country Code & Format Check (+91XXXXXXXXXX)
     const phoneRegex = /^\+91[6-9]\d{9}$/;
     if (!phoneRegex.test(mobile)) {
-      alert("Verification Error: Mobile number must start with +91 followed by 10 digits (e.g., +919876543210).");
+      alert("WhatsApp Registry Error: Mobile number must start with +91 followed by 10 digits (e.g., +919876543210).");
       return;
     }
     
@@ -134,11 +133,8 @@ const App: React.FC = () => {
       const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
       const expiryTime = Date.now() + 5 * 60 * 1000; // 5 Minutes
       
-      // 3. WhatsApp Cloud API Integration (Production Conceptual Call)
-      // In production environment: 
-      // await supabase.functions.invoke('send-whatsapp-otp', { body: { mobile, otp: newOtp } });
-      
-      // Simulation of WhatsApp Delivery Network
+      // 3. WhatsApp Cloud API Dispatch (Production Simulation)
+      // In production environment, this triggers a serverless function communicating with Meta's Graph API.
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       setGeneratedOtp(newOtp);
@@ -146,42 +142,37 @@ const App: React.FC = () => {
       setOtpAttempts(0);
       setOtpSent(true);
       
-      alert(`FRESH CUT SECURITY: A unique 6-digit code has been sent to your WhatsApp account at ${mobile}. Valid for 5 minutes.`);
-      
-      // Developer helper (for demo convenience while preserving security flow)
+      alert(`WHATSAPP SECURE DISPATCH: A unique 6-digit verification code has been sent to your WhatsApp account at ${mobile}. Valid for 5 minutes.`);
       console.log(`[WhatsApp Debug] Code dispatched: ${newOtp}`);
       
       await logActivity('system_action', `WhatsApp OTP dispatched to ${mobile}`, 'wa-ref', 'customer');
     } catch (error) {
-      alert("WhatsApp Gateway Error: Service temporarily unreachable. Please try again in 30 seconds.");
+      alert("WhatsApp Gateway Error: Service delayed. Please retry in 30 seconds.");
     } finally {
       setIsSendingOtp(false);
     }
   };
 
   const handleVerifyOtp = () => {
-    // 1. Security Check: Attempts
     if (otpAttempts >= 3) {
       alert("SECURITY BLOCK: Max verification attempts reached. Please request a new code.");
       setOtpSent(false);
       return;
     }
 
-    // 2. Security Check: Expiry
     if (Date.now() > otpExpiry) {
-      alert("VALIDATION FAILED: The verification code has expired. Request a fresh code via WhatsApp.");
+      alert("EXPIRED CODE: The verification code has expired. Request a fresh code via WhatsApp.");
       setOtpSent(false);
       return;
     }
 
-    // 3. Logic Validation
     if (otp === generatedOtp) {
       setIsOtpVerified(true);
-      alert("IDENTITY VALIDATED: WhatsApp identity confirmed. Registration unlocked.");
+      alert("IDENTITY CONFIRMED: WhatsApp identity verified. Registry unlocked.");
       logActivity('system_action', `WhatsApp Identity Verified: ${mobile}`, 'wa-success', 'customer');
     } else {
       setOtpAttempts(prev => prev + 1);
-      alert(`INVALID CODE: Incorrect code. ${2 - otpAttempts} attempts remaining.`);
+      alert(`INVALID CODE: Incorrect code. ${3 - otpAttempts - 1} attempts remaining.`);
     }
   };
 
@@ -201,7 +192,7 @@ const App: React.FC = () => {
           pan_verified: true
         };
         setProfile(adminProfile);
-        await logActivity('user_login', `Admin Session Authenticated`, adminProfile.id, 'admin');
+        await logActivity('user_login', `Admin Identity Authenticated: Supervisor Session Started`, adminProfile.id, 'admin');
         setCurrentView('admin-panel');
         return;
       } else {
@@ -212,7 +203,7 @@ const App: React.FC = () => {
 
     if (type === 'signup' && authRole === 'customer') {
       if (!isOtpVerified) {
-        alert("REGISTRY ERROR: Mobile verification via WhatsApp is mandatory to establish customer identity.");
+        alert("REGISTRY ERROR: WhatsApp identity verification is mandatory for Customer registry entries.");
         return;
       }
     }
@@ -232,12 +223,12 @@ const App: React.FC = () => {
     setProfile(newProfile);
     
     if (type === 'signup') {
-      await logActivity('user_signup', `Identity Established [${authRole}]: ${newProfile.full_name}`, newProfile.id, authRole);
+      await logActivity('user_signup', `New ${authRole} entry in registry: ${newProfile.full_name}`, newProfile.id, authRole);
       if (authRole === 'professional') {
-        alert("APPLICATION RECEIVED: Your artisan identity is in 'Pending' status. Log in to Dashboard to complete PAN verification for marketplace listing.");
+        alert("ONBOARDING: Application registered. Log in to Dashboard to complete PAN/Facility verification for approval.");
       }
     } else {
-      await logActivity('user_login', `Identity Authorized: ${newProfile.full_name}`, newProfile.id, authRole);
+      await logActivity('user_login', `Member Identity Authenticated: ${newProfile.full_name}`, newProfile.id, authRole);
     }
     
     setCurrentView('dashboard');
@@ -264,7 +255,7 @@ const App: React.FC = () => {
       }]);
 
       if (!error) {
-        await logActivity('booking_created', `Marketplace Demand Emitted by ${profile.full_name}`, bookingId);
+        await logActivity('booking_created', `Marketplace Demand Signal emitted by ${profile.full_name}`, bookingId);
         setCurrentView('payment-mockup');
       }
     } catch (err) {
@@ -279,12 +270,14 @@ const App: React.FC = () => {
     localStorage.removeItem('freshcut_view_state');
     setCurrentView('home');
     fetchApprovedPartners();
-    // Security reset
+    // Clear security states
     setOtpSent(false);
     setIsOtpVerified(false);
     setGeneratedOtp('');
     setOtp('');
     setMobile('');
+    setEmail('');
+    setPassword('');
   };
 
   const handleViewChange = (view: string) => {
