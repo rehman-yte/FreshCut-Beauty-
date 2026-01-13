@@ -32,6 +32,15 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole, onLogout, onAuthOpen, 
         </div>
 
         <div className="flex items-center space-x-4">
+          {userRole === 'admin' && (
+            <button 
+              onClick={() => onViewChange('admin-panel')} 
+              className="px-8 py-2.5 bg-gold text-dark-900 text-[10px] font-black rounded-full hover:bg-gold-light transform hover:scale-105 transition-all duration-300 shadow-lg shadow-gold/20 uppercase"
+            >
+              ADMIN PANEL
+            </button>
+          )}
+          
           {userRole ? (
             <button onClick={onLogout} className="px-6 py-2 border border-gold/30 text-gold text-[10px] font-black rounded-full hover:bg-gold hover:text-dark-900 transition-all duration-500 uppercase">LOGOUT</button>
           ) : (
